@@ -125,7 +125,8 @@ public class OAuthController {
             	    .build();
             return memberRepository.save(created);
         });
-
+        
+        
         // 세션 로그인
         session.setAttribute("sid", member.getMid());
 
