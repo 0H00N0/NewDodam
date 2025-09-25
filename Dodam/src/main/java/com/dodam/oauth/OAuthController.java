@@ -127,15 +127,35 @@ public class OAuthController {
         });
         
         
-        // 세션 로그인
+     // 세션 로그인
         session.setAttribute("sid", member.getMid());
 
+        // ✅ 프로필 미완성 여부 계산
+        boolean telMissing   = (member.getMtel() == null || member.getMtel().isBlank() || "00000000000".equals(member.getMtel()));
+        boolean addrMissing  = (member.getMaddr() == null || member.getMaddr().isBlank() || "SOCIAL_SIGNUP".equals(member.getMaddr()));
+
+        // mpost 타입에 맞춰 체크 (숫자형 예시)
+        boolean postMissing  = (member.getMpost() == null || member.getMpost() == 0L);
+
+        // // 만약 mpost가 문자열이라면 위 줄 대신 ↓
+        // boolean postMissing  = (member.getMpost() == null || member.getMpost().isBlank() || "00000".equals(member.getMpost()));
+
+        boolean profileIncomplete = telMissing || addrMissing || postMissing;
+
         return ResponseEntity.ok(Map.of(
-                "login", true,
-                "mid", member.getMid(),
-                "name", member.getMname(),
-                "email", member.getMemail()
+            "login", true,
+            "mid", member.getMid(),
+            "name", member.getMname(),
+            "email", member.getMemail(),
+            // ✅ 프론트에서 바로 사용
+            "profileIncomplete", profileIncomplete,
+            "missing", Map.of(
+                "tel", telMissing,
+                "addr", addrMissing,
+                "post", postMissing
+            )
         ));
+
     }
 
     @GetMapping(value = "/me", produces = MediaType.APPLICATION_JSON_VALUE)
