@@ -113,14 +113,16 @@ public class OAuthController {
             String randomPwHash = passwordEncoder.encode(UUID.randomUUID().toString());
 
             MemberEntity created = MemberEntity.builder()
-                    .mid(mid)
-                    .mpw(randomPwHash)
-                    .mname(displayName != null ? displayName : providerUpper + "사용자")
-                    .memail(email)          // null 허용 가능
-                    .mtel(telFinal)         // ✅ ORA-01400 회피용 기본값 포함
-                    .loginmethod(lm)
-                    .memtype(mt)
-                    .build();
+            	    .mid(mid)
+            	    .mpw(randomPwHash)
+            	    .mname(displayName != null ? displayName : providerUpper + "사용자")
+            	    .memail(email)                  // null 허용 가능
+            	    .mtel(telFinal)                 // 없으면 "00000000000"으로 보정됨
+            	    .maddr("SOCIAL_SIGNUP")         // ✅ NOT NULL 회피: 공백/빈문자 금지
+            	    .mpost(0L)                      // ✅ 숫자형이면 0L, 문자형이면 "00000" 등으로
+            	    .loginmethod(lm)
+            	    .memtype(mt)
+            	    .build();
             return memberRepository.save(created);
         });
 
