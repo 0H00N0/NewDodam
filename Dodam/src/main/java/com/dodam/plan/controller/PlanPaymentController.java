@@ -18,7 +18,7 @@ import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import com.dodam.plan.Entity.PlanInvoiceEntity;  // <-- 패키지 경로의 'Entity' 대소문자 주의
+import com.dodam.plan.Entity.PlanInvoiceEntity;
 import com.dodam.plan.enums.PlanEnums;
 
 import java.util.LinkedHashMap;
@@ -35,8 +35,8 @@ public class PlanPaymentController {
 
     private final PlanInvoiceRepository invoiceRepo;
     private final PlanPaymentRepository paymentRepo;
-    private final PlanPaymentGatewayService pgSvc;   // 외부 결제 게이트웨이 호출만
-    private final PlanBillingService billingSvc;     // DB 기록/상태 확정/카드메타
+    private final PlanPaymentGatewayService pgSvc;
+    private final PlanBillingService billingSvc;
 
     @Value("${payments.confirm.immediate.enabled:false}")
     private boolean confirmImmediate;
@@ -66,7 +66,6 @@ public class PlanPaymentController {
         var inv = invoiceRepo.findById(invoiceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "INVOICE_NOT_FOUND"));
 
-        // 이미 결제된 인보이스는 즉시 OK
         if (inv.getPiStat() == PiStatus.PAID) {
             return ResponseEntity.ok(Map.of("result","OK","status","PAID","invoiceId",invoiceId));
         }
@@ -88,14 +87,11 @@ public class PlanPaymentController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "BILLING_KEY_NOT_FOUND");
         }
 
-        // inv{invoiceId}-ts{epochMillis}
         final String paymentId = "inv" + invoiceId + "-ts" + System.currentTimeMillis();
 
         if (confirmImmediate) {
-            // 동기 승인(개발용)
             var res = pgSvc.payByBillingKey(paymentId, billingKey, amount, customerId);
 
-            // ✅ 항상 현재 인보이스로 기록
             Long targetInvoiceId = inv.getPiId();
 
             billingSvc.recordAttempt(targetInvoiceId,
@@ -103,7 +99,6 @@ public class PlanPaymentController {
                     res.paymentId(), res.receiptUrl(), res.rawJson());
 
             if (res.success()) {
-                // 인보이스 상태는 billingSvc 내부에서 확정된다고 가정 (recordAttempt 연계)
                 return ResponseEntity.ok(Map.of(
                         "result","OK","status","PAID",
                         "paymentId",res.paymentId(),
@@ -115,7 +110,6 @@ public class PlanPaymentController {
                         "invoiceId",targetInvoiceId));
             }
         } else {
-            // ✅ 비동기 승인(권장): 즉시 202 반환 → 프론트는 /payments/{paymentId} 폴링
             paymentExecutor.submit(() -> {
                 try {
                     var r = pgSvc.payByBillingKey(paymentId, billingKey, amount, customerId);
@@ -123,7 +117,6 @@ public class PlanPaymentController {
                     Long targetInvoiceId = inv.getPiId();
 
                     if (!r.success() && "ACCEPTED".equalsIgnoreCase(r.failReason())) {
-                        // 게이트웨이 접수됨
                         billingSvc.recordAttempt(targetInvoiceId, false, "ACCEPTED", r.paymentId(), r.receiptUrl(), r.rawJson());
                     } else {
                         billingSvc.recordAttempt(targetInvoiceId, r.success(), r.success()?null:r.failReason(),
@@ -132,7 +125,6 @@ public class PlanPaymentController {
 
                     boolean paid = r.success();
                     if (!paid) {
-                        // 🔁 짧은 지연 조회(2초 간격, 최대 8초)
                         for (int i = 0; i < 4; i++) {
                             try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
                             var lookup = pgSvc.safeLookup(paymentId);
@@ -141,7 +133,7 @@ public class PlanPaymentController {
                                 billingSvc.recordAttempt(targetInvoiceId, true, null, paymentId, null, lookup.rawJson());
                                 paid = true; break;
                             }
-                            if ("FAILED".equals(st) || "CANCELED".equals(st)) {
+                            if ("FAILED".equals(st) || "CANCELED".equals(st) || "CANCELLED".equals(st)) {
                                 billingSvc.recordAttempt(targetInvoiceId, false, "LOOKUP:"+st, paymentId, null, lookup.rawJson());
                                 break;
                             }
@@ -160,9 +152,6 @@ public class PlanPaymentController {
         }
     }
 
-    /**
-     * (직접 호출형) 결제키 결제 – 필요 시 유지
-     */
     @PostMapping(path = "/{paymentId}/billing-key", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> payByBillingKey(
             @PathVariable("paymentId") String paymentId,
@@ -179,7 +168,6 @@ public class PlanPaymentController {
         var pay = pgSvc.payByBillingKey(paymentId, billingKey, amount, currency, orderName, storeId, customerId, channelKey);
 
         if (!pay.success()) {
-            // 실패 응답 그대로 노출 (디버깅 편의)
             return ResponseEntity.status(502).body(Map.of(
                     "success", false,
                     "paymentId", pay.paymentId(),
@@ -189,7 +177,6 @@ public class PlanPaymentController {
             ));
         }
 
-        // 간단 보정 폴링
         var lookup = pgSvc.safeLookup(pay.paymentId());
 
         return ResponseEntity.ok(Map.of(
@@ -202,9 +189,6 @@ public class PlanPaymentController {
         ));
     }
 
-    /**
-     * (유지) 외부 상태 원문 확인용
-     */
     @GetMapping("/{paymentId}/status")
     public ResponseEntity<?> status(@PathVariable("paymentId") String paymentId) {
         var r = pgSvc.safeLookup(paymentId);
@@ -215,21 +199,14 @@ public class PlanPaymentController {
         ));
     }
 
-    /**
-     * ✅ 프론트 폴링 엔드포인트: "DB 인보이스 상태"를 최우선으로 판단한다.
-     * - PAID / FAILED / CANCELED 이면 즉시 done=true 로 반환
-     * - 그 외(PENDING 등)일 때만 게이트웨이 조회 값을 보조로 사용
-     */
     @GetMapping("/{paymentId}")
     public ResponseEntity<?> getPaymentStatus(@PathVariable("paymentId") String paymentId) {
         Long invoiceId = parseInvoiceId(paymentId);
 
-        // (A) 인보이스 조회 (Optional<PlanInvoiceEntity>)
         var invOpt = (invoiceId != null)
                 ? invoiceRepo.findById(invoiceId)
                 : java.util.Optional.<PlanInvoiceEntity>empty();
 
-        // 공통 캐시 방지 헤더
         HttpHeaders nocache = new HttpHeaders();
         nocache.add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         nocache.add("Pragma", "no-cache");
@@ -237,7 +214,6 @@ public class PlanPaymentController {
         if (invOpt.isPresent()) {
             PlanInvoiceEntity inv = invOpt.get();
 
-            // 1) DB 상태로 우선 판단
             boolean dbPaid   = (inv.getPiStat() == PiStatus.PAID) || (inv.getPiPaid() != null);
             boolean dbFailed = (inv.getPiStat() == PiStatus.FAILED);
             boolean dbCancel = (inv.getPiStat() == PiStatus.CANCELED);
@@ -250,7 +226,7 @@ public class PlanPaymentController {
                                 "invoiceId", inv.getPiId(),
                                 "status",    "PAID",
                                 "done",      true,
-                                "paidAt",    inv.getPiPaid() // 있으면 전달
+                                "paidAt",    inv.getPiPaid()
                         ));
             }
             if (dbFailed || dbCancel) {
@@ -264,13 +240,12 @@ public class PlanPaymentController {
                         ));
             }
 
-            // 2) 아직 DB가 PENDING이면, 게이트웨이 상태 보조
             var r = pgSvc.safeLookup(paymentId);
             String s = String.valueOf(r.status()).toUpperCase();
 
             boolean gwDone = switch (s) {
                 case "PAID", "SUCCEEDED", "SUCCESS", "FAILED", "CANCELED", "CANCELLED", "NOT_FOUND" -> true;
-                default -> false; // PENDING / UNKNOWN 등
+                default -> false;
             };
 
             return ResponseEntity.ok()
@@ -284,7 +259,6 @@ public class PlanPaymentController {
                     ));
         }
 
-        // 3) 인보이스 못 찾으면 게이트웨이만 의존
         var r = pgSvc.safeLookup(paymentId);
         String s = String.valueOf(r.status()).toUpperCase();
         boolean gwDone = switch (s) {
@@ -302,7 +276,6 @@ public class PlanPaymentController {
                 ));
     }
 
-    /** "inv{digits}-ts{digits}" → digits 추출 */
     private static final Pattern INV_PAT = Pattern.compile("^inv(\\d+)-ts\\d+$");
     private static Long parseInvoiceId(String paymentId) {
         if (!StringUtils.hasText(paymentId)) return null;
@@ -314,13 +287,11 @@ public class PlanPaymentController {
         return null;
     }
 
-    /** 소수 금액 → 정수 KRW (반올림) */
     private static long toLongAmount(java.math.BigDecimal b) {
         if (b == null) return 0L;
         return Math.max(b.setScale(0, java.math.RoundingMode.HALF_UP).longValue(), 0L);
     }
 
-    /** 멤버에서 customerId 유추(선택 필드) */
     private static String resolveCustomerId(MemberEntity member) {
         try {
             var m = member.getClass().getMethod("getCustomerId");

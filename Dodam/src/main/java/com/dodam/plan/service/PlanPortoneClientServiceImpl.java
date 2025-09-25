@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 @Slf4j
 @Service
@@ -31,10 +33,12 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     private final boolean isTest;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    // ⬇⬇⬇ 여기만 핵심 변경: confirm 60s → 15s
-    private static final Duration TIMEOUT_CONFIRM = Duration.ofSeconds(15);
-    private static final Duration TIMEOUT_LOOKUP  = Duration.ofSeconds(6);
+    // 타임아웃
+    private static final Duration TIMEOUT_CONFIRM = Duration.ofSeconds(40);
+    private static final Duration TIMEOUT_LOOKUP  = Duration.ofSeconds(15);
     private static final Duration TIMEOUT_DEFAULT = Duration.ofSeconds(25);
+    private static final Duration POLL_MAX        = Duration.ofSeconds(60);
+    private static final Duration POLL_INTERVAL   = Duration.ofSeconds(2);
 
     public PlanPortoneClientServiceImpl(@Qualifier("portoneWebClient") WebClient portoneWebClient,
                                         PlanPortoneProperties props) {
@@ -105,6 +109,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             }
             if (isTest || req.isTest()) body.put("isTest", true);
 
+            // 1) 승인 호출
             String raw = portone.post()
                     .uri(uriBuilder -> uriBuilder.path("/payments/{pid}/billing-key").build(req.paymentId()))
                     .header("Idempotency-Key", req.paymentId())
@@ -122,11 +127,11 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
                             }))
                     .timeout(TIMEOUT_CONFIRM)
                     .onErrorResume(io.netty.handler.timeout.ReadTimeoutException.class, t -> {
-                        log.warn("[PortOne] confirm READ TIMEOUT -> mark as PENDING (pid={})", req.paymentId());
+                        log.warn("[PortOne] confirm READ TIMEOUT -> treat as PENDING (pid={})", req.paymentId());
                         return Mono.just("{\"status\":\"PENDING\",\"id\":\""+req.paymentId()+"\"}");
                     })
                     .onErrorResume(java.util.concurrent.TimeoutException.class, t -> {
-                        log.warn("[PortOne] confirm TIMEOUT -> mark as PENDING (pid={})", req.paymentId());
+                        log.warn("[PortOne] confirm TIMEOUT -> treat as PENDING (pid={})", req.paymentId());
                         return Mono.just("{\"status\":\"PENDING\",\"id\":\""+req.paymentId()+"\"}");
                     })
                     .block();
@@ -134,13 +139,9 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             JsonNode root = safeJson(raw);
             String status = pickStatus(root);
 
+            // 2) id 파생
             String providerId = pick(root, "transactionId");
             if (providerId == null) providerId = pick(root.path("payment"), "transactionId");
-
-            if (providerId == null) {
-                String payId = pick(root.path("payment"), "id");
-                if (payId != null && !payId.startsWith("inv")) providerId = payId;
-            }
 
             String merchantId = pick(root, "id");
             if (merchantId == null) merchantId = pick(root.path("payment"), "id");
@@ -149,24 +150,46 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
                 providerId = translateMerchantToProvider(merchantId);
             }
 
-            String idForLookup = providerId != null ? providerId
-                                                    : (merchantId != null ? merchantId : req.paymentId());
+            String idForLookup = (StringUtils.hasText(providerId) ? providerId :
+                                  (StringUtils.hasText(merchantId) ? merchantId : req.paymentId()));
 
-            // 응답이 PENDING/UNKNOWN이면 즉시 1회 조회 보강
-            if ((status == null || "PENDING".equals(status) || "UNKNOWN".equals(status))
-                    && idForLookup != null && !idForLookup.isBlank()) {
-                LookupResponse lr = lookupPayment(idForLookup);
-                JsonNode j = safeJson(lr.raw());
-                JsonNode node = firstPaymentNode(j);
-                String s2 = pickStatus(node);
-                if (s2 != null && !s2.isBlank()) status = s2;
+            // 3) PENDING/UNKNOWN → 폴링 보강 (정확 매칭으로 상태/원문 보정)
+            String finalRaw = raw;
+            if (StringUtils.hasText(idForLookup) &&
+                (status == null || "PENDING".equalsIgnoreCase(status) || "UNKNOWN".equalsIgnoreCase(status))) {
+
+                long deadline = System.nanoTime() + POLL_MAX.toNanos();
+                while (System.nanoTime() < deadline) {
+                    LookupResponse lr = lookupPayment(idForLookup);
+                    JsonNode j = safeJson(lr.raw());
+                    JsonNode node = findPaymentNode(j, idForLookup); // ★ 정확 매칭
+                    String st = (pickStatus(node) == null ? "" : pickStatus(node)).toUpperCase();
+
+                    if (StringUtils.hasText(st)) status = st;
+                    if (isFinal(st)) {
+                        if (StringUtils.hasText(lr.raw())) {
+                            finalRaw = lr.raw();
+                        }
+                        break;
+                    }
+                    try { Thread.sleep(POLL_INTERVAL.toMillis()); }
+                    catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
             }
 
-            return new ConfirmResponse(idForLookup, status != null ? status : "UNKNOWN", raw);
+            return new ConfirmResponse(idForLookup, status != null ? status : "UNKNOWN", finalRaw);
         } catch (Exception e) {
             log.error("[PortOne] confirmByBillingKey failed", e);
             return new ConfirmResponse(req.paymentId(), "ERROR", e.toString());
         }
+    }
+
+    private boolean isFinal(String s) {
+        if (s == null) return false;
+        return switch (s) {
+            case "PAID", "SUCCEEDED", "SUCCESS", "FAILED", "CANCELED", "CANCELLED" -> true;
+            default -> false;
+        };
     }
 
     @Override
@@ -219,11 +242,12 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
 
             if (sc.is2xxSuccessful()) {
                 JsonNode json = safeJson(body);
-                JsonNode node = firstPaymentNode(json);
+                JsonNode node = findPaymentNode(json, paymentId); // ★ first → 정확 매칭
                 String id = pick(node, "id");
                 if (id == null) id = pick(node.path("payment"), "id");
                 String status = pickStatus(node);
-                return new LookupResponse(id != null ? id : paymentId, status != null ? status : "UNKNOWN", body);
+                return new LookupResponse(StringUtils.hasText(id) ? id : paymentId,
+                        StringUtils.hasText(status) ? status : "UNKNOWN", body);
             } else if (sc.value() == 404) {
                 return new LookupResponse(paymentId, "NOT_FOUND", body);
             } else {
@@ -236,15 +260,8 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     }
 
     @Override
-    public JsonNode scheduleByBillingKey(
-            String paymentId,
-            String billingKey,
-            long amount,
-            String currency,
-            String customerId,
-            String orderName,
-            Instant timeToPayUtc
-    ) {
+    public JsonNode scheduleByBillingKey(String paymentId, String billingKey, long amount, String currency,
+                                         String customerId, String orderName, Instant timeToPayUtc) {
         try {
             Map<String, Object> payment = new HashMap<>();
             payment.put("billingKey", billingKey);
@@ -364,7 +381,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
                     .block(TIMEOUT_LOOKUP);
 
             JsonNode root = safeJson(raw);
-            JsonNode node = firstPaymentNode(root);
+            JsonNode node = findPaymentNode(root, orderId); // ★ 정확 매칭
             return node.isMissingNode() ? root : node;
         } catch (Exception e) {
             log.error("[PortOne] getPaymentByOrderId({}) failed", orderId, e);
@@ -375,8 +392,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
         }
     }
 
-    // waitUntilPaid 등 나머지 헬퍼는 기존 그대로 ---------------------------------
-
+    // ---- 유틸 ----
     private JsonNode safeJson(String s) {
         try { return mapper.readTree(s == null ? "{}" : s); }
         catch (Exception e) { return mapper.createObjectNode(); }
@@ -393,9 +409,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     }
     private JsonNode firstPaymentNode(JsonNode root) {
         if (root == null || root.isMissingNode()) return mapper.createObjectNode();
-        if (root.isArray()) {
-            return root.size() > 0 ? root.get(0) : mapper.createObjectNode();
-        }
+        if (root.isArray()) return root.size() > 0 ? root.get(0) : mapper.createObjectNode();
         if (root.has("items") && root.path("items").isArray()) {
             JsonNode arr = root.path("items");
             return arr.size() > 0 ? arr.get(0) : mapper.createObjectNode();
@@ -419,7 +433,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
                     .block(TIMEOUT_LOOKUP);
 
             JsonNode json = safeJson(body);
-            JsonNode node = firstPaymentNode(json);
+            JsonNode node = findPaymentNode(json, merchantId); // ★ 정확 매칭
 
             String providerId = null;
             String payId = pick(node.path("payment"), "id");
@@ -438,5 +452,53 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             log.warn("[PortOne] translateMerchantToProvider failed: {}", e.toString());
             return null;
         }
+    }
+
+    /** 배열/래퍼에서 특정 id/tx 와 '정확히' 매칭되는 노드 선택 */
+    private JsonNode findPaymentNode(JsonNode root, String targetId) {
+        if (root == null || root.isMissingNode()) return mapper.createObjectNode();
+        if (!StringUtils.hasText(targetId)) return firstPaymentNode(root);
+
+        // 단일 노드
+        if (!root.isArray() && !root.has("items") && !root.has("content")) {
+            if (matches(root, targetId)) return root;
+            JsonNode p = root.path("payment");
+            if (!p.isMissingNode() && matches(p, targetId)) return root;
+        }
+
+        // 배열 검색
+        Function<JsonNode, JsonNode> scanArr = arr -> {
+            for (JsonNode n : arr) {
+                if (matches(n, targetId)) return n;
+                JsonNode p = n.path("payment");
+                if (!p.isMissingNode() && matches(p, targetId)) return n;
+            }
+            return null;
+        };
+
+        if (root.isArray()) {
+            JsonNode hit = scanArr.apply(root);
+            if (hit != null) return hit;
+        }
+        if (root.has("items") && root.path("items").isArray()) {
+            JsonNode hit = scanArr.apply(root.path("items"));
+            if (hit != null) return hit;
+        }
+        if (root.has("content") && root.path("content").isArray()) {
+            JsonNode hit = scanArr.apply(root.path("content"));
+            if (hit != null) return hit;
+        }
+
+        return firstPaymentNode(root); // fallback
+    }
+
+    /** 노드가 id/transactionId 와 일치하는지 검사 */
+    private boolean matches(JsonNode n, String targetId) {
+        if (!StringUtils.hasText(targetId) || n == null || n.isMissingNode()) return false;
+        String id  = pick(n, "id");
+        String pid = pick(n.path("payment"), "id");
+        String tx  = pick(n, "transactionId");
+        String ptx = pick(n.path("payment"), "transactionId");
+        return targetId.equals(id) || targetId.equals(pid) || targetId.equals(tx) || targetId.equals(ptx);
     }
 }

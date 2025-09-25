@@ -29,13 +29,13 @@ public class PlanPgWebhookController {
     private final PlanBillingService billingSvc;
     private final PlanPaymentGatewayService pgSvc;
     private final PlanPortoneClientService portoneClient; // orderId 조회용
-    private final PlanPaymentRepository paymentRepo;      // 카드메타 갱신 (payKey 기준)
+    private final PlanPaymentRepository paymentRepo;      // 카드메타 갱신
 
     private static final JsonMapper M = JsonMapper.builder().build();
     private static final Set<String> PID_KEYS = setOf(
             "paymentId","payment_id","id","payment.id",
             "transactionUid","transaction_uid","tx_id",
-            "orderId","order_id" // inv…-ts… 형태 보조
+            "orderId","order_id"
     );
     private static final Set<String> STATUS_KEYS  = setOf("status","payment.status","pay.status");
     private static final Set<String> RECEIPT_KEYS = setOf("receiptUrl","receipt.url","card.receiptUrl");
@@ -45,11 +45,9 @@ public class PlanPgWebhookController {
     public ResponseEntity<?> handle(@RequestBody String raw) {
         try {
             final JsonNode root = M.readTree(raw);
-
-            // 🔍 원본 JSON을 예쁘게 로깅
             log.info("[WEBHOOK RAW JSON PRETTY]\n{}", root.toPrettyString());
 
-            final String anyId     = pickDeep(root, PID_KEYS);     // providerId 또는 orderId(inv…-ts…)
+            final String anyId     = pickDeep(root, PID_KEYS);
             final String statusRaw = pickDeep(root, STATUS_KEYS);
             String       receipt   = pickDeep(root, RECEIPT_KEYS);
 
@@ -61,21 +59,16 @@ public class PlanPgWebhookController {
                 return ResponseEntity.ok().build();
             }
 
-            // 1) 인보이스 찾기: (A) piUid = anyId  (B) inv{piId}-ts… 에서 숫자 추출
             Optional<PlanInvoiceEntity> optInv = invoiceRepo.findByPiUid(anyId);
-            if (optInv.isEmpty()) {
-                optInv = findByInvLike(anyId);
-            }
+            if (optInv.isEmpty()) optInv = findByInvLike(anyId);
             if (optInv.isEmpty()) {
                 log.warn("[WEBHOOK] invoice not found by id={}", anyId);
                 return ResponseEntity.ok().build();
             }
             PlanInvoiceEntity inv = optInv.get();
 
-            // 2) 상태 판정 (느슨하게)
             final String st = normUp(statusRaw);
             if (isPaid(st)) {
-                // --- enrich: providerId/lookup/rawJson/receipt, billingKey(payKey), 카드메타 ---
                 String providerId = null;
                 String enrichedJson = raw;
                 String payKey = null;
@@ -88,12 +81,8 @@ public class PlanPgWebhookController {
                         if (providerId != null) {
                             JsonNode exact = findItemByOrderId(byOrder, anyId);
                             String rcp = pickDeep(exact, RECEIPT_KEYS);
-                            if (!StringUtils.hasText(receipt) && StringUtils.hasText(rcp)) {
-                                receipt = rcp;
-                            }
-                            payKey = firstNonBlank(
-                                    pickDeep(exact, setOf("billingKey","billing_key","payKey"))
-                            );
+                            if (!StringUtils.hasText(receipt) && StringUtils.hasText(rcp)) receipt = rcp;
+                            payKey = firstNonBlank(pickDeep(exact, setOf("billingKey","billing_key","payKey")));
                         }
                     }
                 } catch (Exception e) {
@@ -113,7 +102,7 @@ public class PlanPgWebhookController {
                             }
                             CardMeta cm = parseCardMeta(enrichedJson);
                             if (StringUtils.hasText(payKey)) {
-                                paymentRepo.updateCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
+                                persistCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
                             }
                         }
                     } catch (Exception e) {
@@ -135,21 +124,16 @@ public class PlanPgWebhookController {
                         }
                         CardMeta cm = parseCardMeta(enrichedJson);
                         if (StringUtils.hasText(payKey)) {
-                            paymentRepo.updateCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
+                            persistCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
                         }
                     }
                 }
 
-                // --- 인보이스: PAID 전환 + piUid 비어있으면 세팅 ---
                 final String uid = StringUtils.hasText(providerId) ? providerId : anyId;
                 invoiceRepo.markPaidAndSetUidIfEmpty(inv.getPiId(), uid, LocalDateTime.now());
 
-                // --- 시도 레코드 + pattUrl 저장 (billingSvc가 내부에서 PlanAttempt.pattUrl 저장) ---
                 billingSvc.recordAttempt(inv.getPiId(), true, null, uid, firstNonBlank(receipt), enrichedJson);
-
-                // 🔍 실제 저장된 rawJson 확인 로그
                 log.info("[DEBUG] recordAttempt.enrichedJson={}", enrichedJson);
-
                 return ResponseEntity.ok().build();
             }
 
@@ -163,11 +147,10 @@ public class PlanPgWebhookController {
             final String lst = normUp(look.status());
             if (isPaid(lst)) {
                 String rcp = firstNonBlank(tryReceipt(look.rawJson()), receipt);
-                // 카드메타
                 String payKey = safePick(look.rawJson(), "billingKey","billing_key","payKey");
                 CardMeta cm = parseCardMeta(look.rawJson());
                 if (StringUtils.hasText(payKey)) {
-                    paymentRepo.updateCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
+                    persistCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
                 }
                 String uid = StringUtils.hasText(look.paymentId()) ? look.paymentId() : anyId;
                 invoiceRepo.markPaidAndSetUidIfEmpty(inv.getPiId(), uid, LocalDateTime.now());
@@ -293,7 +276,7 @@ public class PlanPgWebhookController {
         }
     }
 
-    /* ===== 카드 메타 파싱 ===== */
+    /* ===== 카드 메타 파싱/저장 ===== */
     private record CardMeta(String bin, String brand, String last4, String pg) {}
     private static CardMeta parseCardMeta(String rawJson) {
         try {
@@ -314,12 +297,31 @@ public class PlanPgWebhookController {
         }
     }
 
+    private boolean persistCardMetaByKey(String payKey, String bin, String brand, String last4, String pg) {
+        if (!StringUtils.hasText(payKey)) return false;
+        return paymentRepo.findByPayKey(payKey).map(p -> {
+            boolean changed = false;
+            String dLast4 = sanitizeLast4(last4);
+            if (StringUtils.hasText(bin)   && !bin.equals(p.getPayBin()))     { p.setPayBin(bin);       changed = true; }
+            if (StringUtils.hasText(brand) && !brand.equals(p.getPayBrand())) { p.setPayBrand(brand);   changed = true; }
+            if (StringUtils.hasText(dLast4)&& !dLast4.equals(p.getPayLast4())){ p.setPayLast4(dLast4);  changed = true; }
+            if (StringUtils.hasText(pg)    && !pg.equals(p.getPayPg()))       { p.setPayPg(pg);         changed = true; }
+            if (changed) paymentRepo.save(p);
+            return changed;
+        }).orElse(false);
+    }
+    private static String sanitizeLast4(String v) {
+        if (!StringUtils.hasText(v)) return null;
+        String digits = v.replaceAll("\\D", "");
+        if (digits.length() >= 4) return digits.substring(digits.length() - 4);
+        return null;
+    }
+
     private static List<String> listKeys(JsonNode n){
         List<String> out = new ArrayList<>();
         collectKeys(n, out, "");
         return out;
     }
-
     private static void collectKeys(JsonNode n, List<String> out, String prefix){
         if (n == null) return;
         if (n.isObject()){

@@ -1,4 +1,3 @@
-// src/main/java/com/dodam/plan/service/PlanPaymentGatewayServiceImpl.java
 package com.dodam.plan.service;
 
 import com.dodam.plan.config.PlanPortoneProperties;
@@ -64,7 +63,7 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
             String customerId,
             String channelKey
     ) {
-        // 1) confirm 요청
+        // 1) 승인
         ConfirmRequest req = new ConfirmRequest(
                 paymentId, billingKey, amount, currency, customerId, orderName,
                 Boolean.TRUE.equals(props.getIsTest())
@@ -77,24 +76,33 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
         String providerPaymentUid = n(res.id());
         String receiptUrl = null;
 
-        // 최초 confirm raw (간이 JSON일 수 있음)
         String rawToStore = res.raw();
 
-        // 확인 가능한 범위에서 영수증 URL 스니핑
+        // 2) 영수증 URL 스니핑 (정확 매칭 시도)
         try {
-            if (res.raw() != null && res.raw().startsWith("{")) {
-                JsonNode root = mapper.readTree(res.raw());
-                receiptUrl = n(root.path("receiptUrl").asText(null));
-                if (receiptUrl == null) receiptUrl = n(root.path("receipt").path("url").asText(null));
-                if (receiptUrl == null) receiptUrl = n(root.at("/urls/receipt").asText(null));
-                if (receiptUrl == null) receiptUrl = n(root.at("/transactions/0/receiptUrl").asText(null));
+            if (rawToStore != null && rawToStore.startsWith("{")) {
+                String target = n(providerPaymentUid) != null ? providerPaymentUid : paymentId;
+                JsonNode root = mapper.readTree(rawToStore);
+                JsonNode node = findPaymentNode(root, target);
+
+                receiptUrl = firstNonBlank(
+                        get(root, "receiptUrl"),
+                        get(root, "receipt", "url"),
+                        get(root, "urls", "receipt"),
+                        get(root, "transactions") != null && root.path("transactions").isArray() && root.path("transactions").size() > 0
+                                ? get(root.path("transactions").get(0), "receiptUrl") : null,
+                        get(node, "receiptUrl"),
+                        get(node, "receipt", "url"),
+                        get(node, "urls", "receipt"),
+                        get(node, "transactions") != null && node.path("transactions").isArray() && node.path("transactions").size() > 0
+                                ? get(node.path("transactions").get(0), "receiptUrl") : null
+                );
             }
         } catch (Exception ignore) {}
 
-        // 우리 쪽에 저장할 uid (provider 가 있으면 그걸 우선)
         String payUidToStore = n(providerPaymentUid) != null ? providerPaymentUid : paymentId;
 
-        // 2) 보강 폴링 (최대 6초)
+        // 3) 간단 보강 폴링(6s)
         if (!success) {
             final String loopKey = resolvePaymentId(firstNonBlank(providerPaymentUid, paymentId));
             final long until = System.currentTimeMillis() + 6_000L;
@@ -110,38 +118,41 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
                         providerPaymentUid = n(lr.id());
                         payUidToStore = n(providerPaymentUid) != null ? providerPaymentUid : paymentId;
 
-                        // ✅ 최종 원문 교체: 폴링으로 받은 상세 raw를 저장
                         if (lr.raw() != null && !lr.raw().isBlank()) {
                             rawToStore = lr.raw();
                             try {
-                                JsonNode root = mapper.readTree(lr.raw());
-                                String rcp = n(root.path("receiptUrl").asText(null));
-                                if (rcp == null) rcp = n(root.path("receipt").path("url").asText(null));
+                                JsonNode r = mapper.readTree(lr.raw());
+                                JsonNode node = findPaymentNode(r, payUidToStore);
+                                String rcp = firstNonBlank(
+                                        get(r, "receiptUrl"),
+                                        get(r, "receipt", "url"),
+                                        get(r, "urls", "receipt"),
+                                        get(node, "receiptUrl"),
+                                        get(node, "receipt", "url"),
+                                        get(node, "urls", "receipt")
+                                );
                                 if (rcp != null) receiptUrl = rcp;
                             } catch (Exception ignore) {}
                         }
                         break;
                     }
-
                     if (isFailedStatus(st)) {
                         status = st;
                         break;
                     }
-                } catch (Exception ignore) { /* swallow */ }
+                } catch (Exception ignore) { }
 
-                try { Thread.sleep(700); }
-                catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                try { Thread.sleep(700); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt(); break;
+                }
             }
         }
 
-        // 3) ✅ DB는 여기서 건드리지 않고 결과만 반환
-        //    success 시 failReason=null, status에는 최종 상태(예: PAID/PENDING/FAILED...), raw는 rawToStore 반환
         return new PlanPayResult(success, payUidToStore, receiptUrl, success ? null : status, status, rawToStore);
     }
 
     private String resolvePaymentId(String anyId) {
         if (!StringUtils.hasText(anyId)) return anyId;
-        // inv{invoiceId}-ts... 형태면 최신 attempt 에서 provider uid 가져와 조회 안정화
         if (anyId.startsWith("inv")) {
             Long invoiceId = extractInvoiceId(anyId);
             return attemptRepo.findLatestPaymentUidByInvoiceId(invoiceId)
@@ -199,25 +210,33 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
         }
         try {
             JsonNode root = mapper.readTree(rawJson);
+            JsonNode node = firstPaymentNode(root); // 기본: 첫 노드(호출부에서 targetId 전달 없으므로)
+
+            // 카드정보가 없는 경우 items 전체 훑어 첫 카드정보 있는 노드 사용
+            if (get(node, "method", "card", "brand") == null && root.has("items") && root.path("items").isArray()) {
+                for (JsonNode n : root.path("items")) {
+                    if (get(n, "method", "card", "brand") != null) { node = n; break; }
+                }
+            }
 
             String billingKey = firstNonBlank(
-                    get(root, "billingKey"),
-                    get(root, "method", "billingKey"),
-                    get(root, "method", "card", "billingKey"),
-                    get(root, "billing", "billingKey"),
-                    get(root, "payment", "method", "billingKey")
+                    get(node, "billingKey"),
+                    get(node, "method", "billingKey"),
+                    get(node, "method", "card", "billingKey"),
+                    get(node, "billing", "billingKey"),
+                    get(node, "payment", "method", "billingKey")
             );
 
-            String bin   = firstNonBlank(get(root, "method", "card", "bin"),   get(root, "card", "bin"));
-            String brand = firstNonBlank(get(root, "method", "card", "brand"), get(root, "card", "brand"));
+            String bin   = firstNonBlank(get(node, "method", "card", "bin"),   get(node, "card", "bin"));
+            String brand = firstNonBlank(get(node, "method", "card", "brand"), get(node, "card", "brand"));
             String last4 = firstNonBlank(
-                    get(root, "method", "card", "last4"),
-                    last4FromMasked(get(root, "method", "card", "number")),
-                    last4FromMasked(get(root, "card", "number"))
+                    get(node, "method", "card", "last4"),
+                    last4FromMasked(get(node, "method", "card", "number")),
+                    last4FromMasked(get(node, "card", "number"))
             );
             String pg = firstNonBlank(
-                    get(root, "pgProvider"), get(root, "pgCompany"),
-                    get(root, "payment", "pgProvider"), get(root, "payment", "pgCompany")
+                    get(node, "pgProvider"), get(node, "pgCompany"),
+                    get(node, "payment", "pgProvider"), get(node, "payment", "pgCompany")
             );
 
             if (log.isDebugEnabled()) {
@@ -256,6 +275,50 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
         for (String s : arr) if (s != null && !s.isBlank()) return s;
         return null;
     }
+
+    private JsonNode firstPaymentNode(JsonNode root) {
+        if (root == null || root.isMissingNode()) return mapper.createObjectNode();
+        if (root.isArray()) return root.size() > 0 ? root.get(0) : mapper.createObjectNode();
+        if (root.has("items") && root.path("items").isArray()) {
+            JsonNode arr = root.path("items");
+            return arr.size() > 0 ? arr.get(0) : mapper.createObjectNode();
+        }
+        if (root.has("content") && root.path("content").isArray()) {
+            JsonNode arr = root.path("content");
+            return arr.size() > 0 ? arr.get(0) : mapper.createObjectNode();
+        }
+        return root;
+    }
+
+    private JsonNode findPaymentNode(JsonNode root, String targetId) {
+        if (root == null || root.isMissingNode() || !StringUtils.hasText(targetId)) return firstPaymentNode(root);
+        // 단일
+        if (!root.isArray() && !root.has("items") && !root.has("content")) {
+            if (matches(root, targetId)) return root;
+            if (matches(root.path("payment"), targetId)) return root;
+        }
+        // 배열
+        if (root.isArray()) {
+            for (JsonNode n : root) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
+        }
+        if (root.has("items") && root.path("items").isArray()) {
+            for (JsonNode n : root.path("items")) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
+        }
+        if (root.has("content") && root.path("content").isArray()) {
+            for (JsonNode n : root.path("content")) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
+        }
+        return firstPaymentNode(root);
+    }
+
+    private boolean matches(JsonNode n, String targetId) {
+        if (!StringUtils.hasText(targetId) || n == null || n.isMissingNode()) return false;
+        String id  = get(n, "id");
+        String pid = get(n.path("payment"), "id");
+        String tx  = get(n, "transactionId");
+        String ptx = get(n.path("payment"), "transactionId");
+        return targetId.equals(id) || targetId.equals(pid) || targetId.equals(tx) || targetId.equals(ptx);
+    }
+
     private String n(String s) { return (s == null || s.isBlank()) ? null : s; }
     private String norm(String v){ return (v==null) ? "" : v.trim().toUpperCase(Locale.ROOT); }
     private boolean isPaidStatus(String status) {

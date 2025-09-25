@@ -314,7 +314,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         return chargeByBillingKeyAndConfirm(invoice.getPiId(), mid, months);
     }
 
-    // ---- helpers ----
+ // ---- helpers ----
     private void updatePaymentCardMetaIfPresent(PlanPaymentEntity payment, JsonNode root) {
         if (payment == null || root == null || root.isMissingNode()) return;
 
@@ -328,6 +328,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         if (last4 != null) {
             String digits = last4.replaceAll("\\D", "");
             if (digits.length() >= 4) last4 = digits.substring(digits.length() - 4);
+            else last4 = null;
         }
 
         String bin = firstNonBlank(
@@ -353,28 +354,20 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
                 root.at("/provider/pg").asText(null)
         );
 
-        boolean hasAny = StringUtils.hasText(bin) || StringUtils.hasText(brand) || StringUtils.hasText(last4) || StringUtils.hasText(pg);
-        if (!hasAny) {
+        boolean changed = false;
+        if (StringUtils.hasText(bin)   && !bin.equals(payment.getPayBin()))     { payment.setPayBin(bin);       changed = true; }
+        if (StringUtils.hasText(brand) && !brand.equals(payment.getPayBrand())) { payment.setPayBrand(brand);   changed = true; }
+        if (StringUtils.hasText(last4) && !last4.equals(payment.getPayLast4())) { payment.setPayLast4(last4);   changed = true; }
+        if (StringUtils.hasText(pg)    && !pg.equals(payment.getPayPg()))       { payment.setPayPg(pg);         changed = true; }
+
+        if (!changed) {
             log.debug("[PaymentMeta] nothing to update for mid={}", payment.getMid());
             return;
         }
 
-        int updated = paymentRepo.updateCardMeta(
-                payment.getPayId(),
-                StringUtils.hasText(bin) ? bin : null,
-                StringUtils.hasText(brand) ? brand : null,
-                StringUtils.hasText(last4) ? last4 : null,
-                StringUtils.hasText(pg) ? pg : null
-        );
-        if (updated > 0) {
-            if (StringUtils.hasText(bin))   payment.setPayBin(bin);
-            if (StringUtils.hasText(brand)) payment.setPayBrand(brand);
-            if (StringUtils.hasText(last4)) payment.setPayLast4(last4);
-            if (StringUtils.hasText(pg))    payment.setPayPg(pg);
-            paymentRepo.save(payment);
-            log.info("[PaymentMeta] updated mid={}, bin={}, brand={}, last4={}, pg={}",
-                    payment.getMid(), payment.getPayBin(), payment.getPayBrand(), payment.getPayLast4(), payment.getPayPg());
-        }
+        paymentRepo.save(payment);
+        log.info("[PaymentMeta] updated mid={}, bin={}, brand={}, last4={}, pg={}",
+                payment.getMid(), payment.getPayBin(), payment.getPayBrand(), payment.getPayLast4(), payment.getPayPg());
     }
 
     private boolean isPaid(String s){ return isTerminal(s) && !"FAILED".equalsIgnoreCase(s) && !"CANCELLED".equalsIgnoreCase(s) && !"CANCELED".equalsIgnoreCase(s); }
