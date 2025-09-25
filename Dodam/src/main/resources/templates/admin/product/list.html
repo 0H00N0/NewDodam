@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>상품 목록</title>
+  <style>
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; text-align: left; border: 1px solid #ddd; }
+    th { background-color: #f2f2f2; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    a { margin-right: 10px; text-decoration: none; color: #007bff; }
+    a:hover { text-decoration: underline; }
+    .btn { display:inline-block; margin-bottom:20px; padding:6px 10px; background:#007bff; color:#fff; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <div th:replace="~{admin/fragments/header :: adminHeader}"></div>
+
+  <div class="admin-body">
+    <div th:replace="~{admin/fragments/sidebar :: adminSidebar}"></div>
+
+    <main class="admin-main">
+      <h1>상품 목록</h1>
+
+      <a href="/admin/product/form" class="btn">상품 추가</a>
+      <a th:href="@{/admin/product/bulk}">엑셀 일괄등록</a>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>상품명</th>
+            <th>카테고리</th>
+            <th>정가</th>
+            <th>대여가격</th>
+            <th>보증금</th>
+            <th>연체료</th>
+            <th>브랜드</th>
+            <th>상태</th>
+            <th>관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:if="${#lists.isEmpty(products)}">
+            <td colspan="10">데이터가 없습니다.</td>
+          </tr>
+
+          <!-- 컨트롤러에서 model.addAttribute("products", 리스트) 로 내려줘야 합니다 -->
+          <tr th:each="product : ${products}">
+            <td th:text="${product.pronum}">1</td>
+            <td th:text="${product.proname}">상품명</td>
+            <td th:text="${product.category != null ? product.category.catename : 'N/A'}">카테고리</td>
+
+            <!-- 금액은 정수로 깔끔하게: 천단위 콤마 + '원' -->
+            <td th:text="|${#numbers.formatDecimal(product.proprice,0,'COMMA',0,'NONE')} 원|">0 원</td>
+            <td th:text="|${#numbers.formatDecimal(product.prorent,0,'COMMA',0,'NONE')} 원|">0 원</td>
+            <td th:text="|${#numbers.formatDecimal(product.prodepos,0,'COMMA',0,'NONE')} 원|">0 원</td>
+            <td th:text="|${#numbers.formatDecimal(product.prolatfe,0,'COMMA',0,'NONE')} 원|">0 원</td>
+
+            <td th:text="${!#strings.isEmpty(product.probrand) ? product.probrand : 'N/A'}">브랜드</td>
+            <td th:text="${!#strings.isEmpty(product.prostat) ? product.prostat : 'N/A'}">상태</td>
+
+            <td>
+              <a th:href="@{/admin/product/form(pronum=${product.pronum})}">수정</a>
+              <a th:href="@{/admin/product/delete/{id}(id=${product.pronum})}"
+                 onclick="return confirm('정말 삭제하시겠습니까?');">삭제</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+</body>
+</html>

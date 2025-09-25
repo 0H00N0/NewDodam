@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head><meta charset="UTF-8"><title>내 정보</title></head>
+<body>
+<h2>내 정보</h2>
+
+<div th:if="${me != null}">
+  <ul>
+    <li>ID : <span th:text="${me.mid}"></span></li>
+    <li>이름 : <span th:text="${me.mname}"></span></li>
+    <li>이메일 : <span th:text="${me.memail}"></span></li>
+    <li>전화 : <span th:text="${me.mtel}"></span></li>
+    <li>주소 : <span th:text="${me.maddr}"></span></li>
+    <li>우편번호 : <span th:text="${me.mpost}"></span></li>
+    <li>생일 : <span th:text="${me.mbirth}"></span></li>
+    <li>닉네임 : <span th:text="${me.mnic}"></span></li>
+    <li>회원타입 : <span th:text="${me.roleName}"></span> (code: <span th:text="${me.roleCode}"></span>)</li>
+    <li>가입방법 : <span th:text="${me.joinWay}"></span></li>
+  </ul>
+</div>
+
+<p>
+  <a href="/">메인으로</a>
+  <a href="/member/logout">로그아웃</a>
+</p>
+</body>
+</html>

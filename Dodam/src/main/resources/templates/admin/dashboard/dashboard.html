@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>관리자 대시보드</title>
+  <style>
+    :root { --h:56px; --sbw:240px; --bg:#0f172a; --side:#111827; --text:#e5e7eb; --muted:#94a3b8; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:ui-sans-serif,system-ui,AppleSDGothicNeo,"Noto Sans KR",Segoe UI,Roboto,Arial;background:#f1f5f9}
+    .container{display:flex;margin-top:var(--h);min-height:calc(100vh - var(--h))}
+    .admin-main{flex:1;padding:24px;min-width:0}
+
+    /* 카드 */
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px}
+    .card h3{margin:0 0 12px 0;font-size:16px}
+    .grid{display:grid;gap:16px}
+    @media (min-width:1024px){ .grid.cols-2{grid-template-columns:1fr 1fr} }
+
+    /* 공지 테이블 */
+    .notice-table{width:100%;border-collapse:collapse}
+    .notice-table th, .notice-table td{border-bottom:1px solid #e5e7eb;padding:10px 8px;text-align:left}
+    .notice-table th{color:#475569;font-size:12px;letter-spacing:.3px}
+    .notice-table td.title a{text-decoration:none;color:#0f172a}
+    .notice-table tr:hover td{background:#f8fafc}
+
+    /* 차트 영역 */
+    .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .chart-select{border:1px solid #cbd5e1;border-radius:8px;padding:6px 10px;background:#fff}
+    .section-title{font-weight:700;margin:24px 0 12px 0}
+  </style>
+</head>
+<body>
+
+<!-- 헤더 / 사이드바 -->
+<div th:replace="~{admin/fragments/header :: adminHeader}"></div>
+<div class="container">
+  <div th:replace="~{admin/fragments/sidebar :: adminSidebar}"></div>
+
+  <main class="admin-main">
+    <!-- ✅ 최신 공지 4건 -->
+    <div class="card">
+      <h3>최근 공지사항</h3>
+      <table class="notice-table">
+        <thead>
+        <tr>
+          <th style="width:80px">번호</th>
+          <th>제목</th>
+          <th style="width:160px">작성자</th>
+          <th style="width:140px">작성일</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="n : ${latestNotices}">
+          <!-- 엔티티/DTO의 필드명에 맞춰서 바꿔줘 -->
+          <td th:text="${n.id}">1</td>
+          <td class="title">
+            <a th:href="@{/admin/notice/{id}(id=${n.id})}"
+               th:text="${n.title}">제목</a>
+          </td>
+          <td th:text="${n.writer != null ? n.writer : '관리자'}">관리자</td>
+          <td th:text="${#temporals.format(n.createdAt, 'yyyy-MM-dd')}">2025-09-02</td>
+        </tr>
+
+        <!-- 공지가 없을 때 -->
+        <tr th:if="${#lists.isEmpty(latestNotices)}">
+          <td colspan="4" style="text-align:center;color:#64748b">등록된 공지사항이 없습니다.</td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ✅ 통계/차트 + 드롭다운 -->
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="chart-head">
+          <h3>통계 차트</h3>
+          <select id="metricSelect" class="chart-select">
+            <option value="product">상품 통계</option>
+            <option value="member">회원 통계</option>
+            <option value="rental">대여 통계</option>
+            <option value="payment">결제 금액</option>
+            <option value="logistics">물류 통계</option>
+            <option value="voc">VOC 통계</option>
+          </select>
+        </div>
+        <canvas id="metricChart" height="240"></canvas>
+      </div>
+
+      <!-- 필요시 다른 시각화/표용 카드 -->
+      <div class="card">
+        <h3>지표 요약</h3>
+        <ul style="margin:0;padding-left:18px;color:#334155;line-height:1.8">
+          <li>오늘 신규 회원: <b th:text="${todayNewMembers != null ? todayNewMembers : 0}">0</b> 명</li>
+          <li>오늘 주문 수: <b th:text="${todayOrders != null ? todayOrders : 0}">0</b> 건</li>
+          <li>오늘 결제 금액: <b th:text="${todayPaymentAmount != null ? #numbers.formatInteger(todayPaymentAmount,3,'COMMA') : 0}">0</b> 원</li>
+          <li>반납 예정: <b th:text="${returnDue != null ? returnDue : 0}">0</b> 건</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 아래는 스크롤 섹션 예시 (사이드바 앵커와 연결해서 내려보는 형태) -->
+    <h2 id="product" class="section-title">상품 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">상품 관련 상세 통계 섹션…</p></div>
+
+    <h2 id="member" class="section-title">회원 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">회원 관련 상세 통계 섹션…</p></div>
+
+    <h2 id="rental" class="section-title">대여 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">대여/반납 상세 통계 섹션…</p></div>
+
+    <h2 id="payment" class="section-title">결제 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">매출/결제 상세 통계 섹션…</p></div>
+
+    <h2 id="logistics" class="section-title">물류 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">물류 상태 상세 통계 섹션…</p></div>
+
+    <h2 id="voc" class="section-title">VOC 통계</h2>
+    <div class="card"><p style="margin:0;color:#475569">문의/불만/칭찬 상세 통계 섹션…</p></div>
+  </main>
+</div>
+
+<!-- 차트 라이브러리 (간단히 CDN 사용) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Thymeleaf에서 JSON 주입 -->
+<script th:inline="javascript">
+  const chartData = /*[[${chartDataJson}]]*/ '{}';
+  const DATA = JSON.parse(chartData);
+
+  const ctx = document.getElementById('metricChart').getContext('2d');
+
+  function makeConfig(key){
+    const labels = DATA[key].labels;
+    const values = DATA[key].values;
+
+    // 데이터 성격에 따라 차트 타입 바꾸기
+    const type = (key === 'payment') ? 'line' : 'doughnut';
+
+    return {
+      type,
+      data: {
+        labels,
+        datasets: [{
+          label: key,
+          data: values,
+          // 색상은 기본값(Chart.js)이 알아서; 필요시 커스텀해도 됨
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: true, position: 'bottom' }
+        }
+      }
+    };
+  }
+
+  let chart = new Chart(ctx, makeConfig('product'));
+
+  document.getElementById('metricSelect').addEventListener('change', (e)=>{
+    chart.destroy();
+    chart = new Chart(ctx, makeConfig(e.target.value));
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>배송 관리</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: #27ae60;
+            color: white;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .welcome {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .info {
+            opacity: 0.8;
+        }
+        .menu {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .menu-item {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .menu-item:hover {
+            transform: translateY(-5px);
+        }
+        .menu-item a {
+            text-decoration: none;
+            color: #27ae60;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .logout-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="welcome">배송 관리 시스템</div>
+        <div class="info">배송기사 권한으로 로그인되었습니다.</div>
+    </div>
+    
+    <div class="menu">
+        <div class="menu-item">
+            <a href="/admin/delivery/list">배송 목록</a>
+        </div>
+        <div class="menu-item">
+            <a href="/admin/delivery/status">배송 상태 관리</a>
+        </div>
+        <div class="menu-item">
+            <a href="/admin/delivery/route">배송 경로</a>
+        </div>
+        <div class="menu-item">
+            <a href="/admin/delivery/history">배송 기록</a>
+        </div>
+    </div>
+    
+    <button class="logout-btn" onclick="logout()">로그아웃</button>
+    
+    <script>
+        function logout() {
+            if (confirm('로그아웃하시겠습니까?')) {
+                fetch('/admin/logout', {
+                    method: 'POST'
+                }).then(() => {
+                    location.href = '/admin/login';
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head><meta charset="UTF-8"><title>Dodam</title></head>
+<body>
+<h1>메인</h1>
+
+<div th:if="${session.sid == null}">
+  <a href="/member/login">로그인</a> |
+  <a href="/member/signup">회원가입</a>
+</div>
+
+<div th:unless="${session.sid == null}">
+  <span th:text="'안녕하세요, ' + ${session.sid} + '님 (' + ${session.srole} + ' / code=' + ${session.sroleCode} + ', ' + ${session.sjoin} + ')'"></span>
+  | <a href="/member/info">내정보</a>
+  | <a href="/member/logout">로그아웃</a>
+</div>
+
+</body>
+</html>

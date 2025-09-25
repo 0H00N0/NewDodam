@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>공지사항 등록/수정</title>
+</head>
+<body>
+    <h1>공지사항 등록/수정</h1>
+    <form th:action="${notice.id == null} ? '/admin/notices/add' : '/admin/notices/edit/' + ${notice.id}" th:object="${notice}" method="post">
+        <input type="hidden" th:field="*{id}" />
+        <div>
+            <label>제목:</label>
+            <input type="text" th:field="*{title}" />
+        </div>
+        <div>
+            <label>내용:</label>
+            <textarea th:field="*{content}"></textarea>
+        </div>
+        <div>
+            <label>고정:</label>
+            <input type="checkbox" th:field="*{pinned}" />
+        </div>
+        <button type="submit">저장</button>
+    </form>
+</body>
+</html>

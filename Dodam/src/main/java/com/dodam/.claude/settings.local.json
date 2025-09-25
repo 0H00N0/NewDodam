@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\dev\\dodam_project\\Dodam\\Dodam\\src\\main\\java\\com\\dodam\\admin/**)",
+      "Read(/c:\\dev\\dodam_project\\Dodam\\Dodam/**)",
+      "Read(/c:\\dev\\dodam_project\\Dodam\\Dodam\\src\\main\\resources/**)",
+      "Read(/c:\\dev\\dodam_project\\Dodam\\Dodam/**)",
+      "Bash(./gradlew:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "c:\\dev\\dodam_project\\Dodam\\Dodam"
+    ]
+  }
+}

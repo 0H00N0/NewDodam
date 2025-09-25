@@ -1,0 +1,135 @@
+# Dodam Pay 상품 도메인 설정
+spring:
+  application:
+    name: dodam-product
+  
+  # 데이터소스 설정 (H2 Database)
+  datasource:
+    url: jdbc:h2:mem:dodam-product;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  
+  # H2 콘솔 설정
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: true
+  
+  # JPA/Hibernate 설정
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: validate  # 개발 환경: create-drop, 운영 환경: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        default_batch_fetch_size: 100  # N+1 문제 완화
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  # SQL 초기화
+  sql:
+    init:
+      mode: never
+      
+      
+  
+  # 서버 설정
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+
+# 관리 엔드포인트 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# 커스텀 설정
+dodam:
+  product:
+    # 이미지 업로드 설정
+    image:
+      upload-path: uploads/products
+      max-file-size: 10MB
+      allowed-extensions: jpg,jpeg,png,gif,webp
+    
+    # 재고 관리 설정
+    inventory:
+      default-min-stock-level: 10
+      low-stock-threshold: 5
+    
+    # 캐시 설정
+    cache:
+      enabled: true
+      ttl: 3600  # 1시간 (초 단위)
+
+---
+# 운영 환경 프로파일
+spring:
+  config:
+    activate:
+      on-profile: production
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/dodam_product
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME:dodam}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  h2:
+    console:
+      enabled: false
+
+---
+# 테스트 환경 프로파일
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  datasource:
+    url: jdbc:h2:mem:test-db;DB_CLOSE_DELAY=-1
+    
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+  sql:
+    init:
+      mode: never  # 테스트에서는 @Sql 어노테이션 사용
+
+logging:
+  level:
+    com.dodam.product: DEBUG

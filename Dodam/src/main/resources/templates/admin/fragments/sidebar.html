@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<nav th:fragment="adminSidebar" class="admin-sidebar">
+  <style>
+    .admin-sidebar .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 12px 0;
+      padding: 0 12px;
+    }
+    
+    .admin-sidebar .menu {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .admin-sidebar .menu li {
+      margin: 0 0 2px 0;
+    }
+    
+    .admin-sidebar .menu a {
+      display: block;
+      padding: 10px 12px;
+      color: var(--text);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+    
+    .admin-sidebar .menu a:hover {
+      background: rgba(55, 65, 81, 0.6);
+      color: #f3f4f6;
+    }
+    
+    .admin-sidebar .menu a.active {
+      background: #1f2937;
+      color: #f3f4f6;
+      border-color: #374151;
+      font-weight: 500;
+    }
+    
+    .admin-sidebar .menu-divider {
+      height: 1px;
+      background: #374151;
+      margin: 16px 12px;
+    }
+    
+    /* 모바일에서 사이드바 추가 메뉴 */
+    .mobile-nav {
+      display: none;
+      border-top: 1px solid #374151;
+      margin-top: 16px;
+      padding-top: 16px;
+    }
+    
+    @media (max-width: 1024px) {
+      .mobile-nav {
+        display: block;
+      }
+    }
+  </style>
+  
+  <div class="section-title">Management</div>
+  <ul class="menu">
+    <li><a th:href="@{/admin/dashboard}" th:classappend="${activeMenu}=='dashboard' ? ' active'">대시보드</a></li>
+    <li><a th:href="@{/admin/notices}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI != null and #httpServletRequest.requestURI.startsWith('/admin/notice/list')} ? ' active'">공지</a></li>
+    <li><a th:href="@{/admin/product/list}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/products')} ? ' active'">상품관리</a></li>
+    <li><a th:href="@{/admin/members}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/members')} ? ' active'">회원관리</a></li>
+    <li><a th:href="@{/admin/orders}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/orders')} ? ' active'">주문관리</a></li>
+    <li><a th:href="@{/admin/payments}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/payments')} ? ' active'">결제관리</a></li>
+    <li><a th:href="@{/admin/customers}" th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/customers')} ? ' active'">고객관리</a></li>
+  </ul>
+  
+  <div class="menu-divider"></div>
+  
+  <div class="section-title">Quick Tools</div>
+  <ul class="menu">
+    <li><a th:href="@{/admin/product/form}" th:classappend="${activeMenu}=='product-form' ? ' active'">상품 등록</a></li>
+    <li><a th:href="@{/admin/category}" th:classappend="${activeMenu}=='category' ? ' active'">카테고리</a></li>
+    <li><a th:href="@{/admin/settings}" th:classappend="${activeMenu}=='settings' ? ' active'">설정</a></li>
+  </ul>
+</nav>
+</body>
+</html>

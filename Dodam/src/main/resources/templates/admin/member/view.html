@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>회원 정보</title>
+</head>
+<body>
+    <h1>회원 정보</h1>
+    <div th:if="${member != null}">
+        <p><strong>ID:</strong> <span th:text="${member.mnum}"></span></p>
+        <p><strong>아이디:</strong> <span th:text="${member.mid}"></span></p>
+        <p><strong>이름:</strong> <span th:text="${member.mname}"></span></p>
+        <p><strong>이메일:</strong> <span th:text="${member.memail}"></span></p>
+        <p><strong>연락처:</strong> <span th:text="${member.mphone}"></span></p>
+        <p><strong>생년월일:</strong> <span th:text="${member.mbirth}"></span></p>
+        <p><strong>주소:</strong> <span th:text="${member.maddress1} + ' ' + ${member.maddress2}"></span></p>
+        <p><strong>가입일:</strong> <span th:text="${member.mjoindate}"></span></p>
+        <p><strong>회원등급:</strong> <span th:text="${member.mgrade}"></span></p>
+        <p><strong>회원유형:</strong> <span th:text="${member.mtype}"></span></p>
+        <p><strong>가입경로:</strong> <span th:text="${member.mprovider}"></span></p>
+    </div>
+    <div th:if="${member == null}">
+        <p>회원 정보를 찾을 수 없습니다.</p>
+    </div>
+    <a href="/admin/members">목록으로 돌아가기</a>
+</body>
+</html>

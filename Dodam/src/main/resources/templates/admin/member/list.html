@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>회원 목록</title>
+
+  <!-- 필요 시 공통 CSS 로드 -->
+  <!-- <link rel="stylesheet" th:href="@{/css/admin.css}" /> -->
+
+  <style>
+    /* 최소 동작을 위한 기본 레이아웃 (없으면 주석 해제해서 사용) */
+    .admin-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    .admin-main { padding: 24px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    thead th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <!-- 헤더 -->
+  <header th:replace="~{admin/fragments/header :: adminHeader}"></header>
+
+  <!-- 본문 레이아웃: 좌측 사이드바 + 우측 메인 -->
+  <div class="admin-layout">
+    <!-- 사이드바 -->
+    <aside th:replace="~{admin/fragments/sidebar :: adminSidebar}"></aside>
+
+    <!-- 메인 -->
+    <main class="admin-main">
+      <div class="container">
+        <h1>회원 목록</h1>
+
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>아이디</th>
+              <th>이름</th>
+              <th>이메일</th>
+              <th>가입일</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:if="${#lists.isEmpty(members)}">
+              <td colspan="6">데이터가 없습니다.</td>
+            </tr>
+
+            <tr th:each="member : ${members}">
+              <td th:text="${member.mnum}">1</td>
+              <td th:text="${member.mid}">userid</td>
+              <td th:text="${member.mname ?: 'N/A'}">홍길동</td>
+              <td th:text="${member.memail ?: 'N/A'}">user@email.com</td>
+              <td th:text="${member.mjoindate != null ? #temporals.format(member.mjoindate,'yyyy-MM-dd HH:mm') : 'N/A'}">2025-09-04 12:00</td>
+              <td>
+                <a th:href="@{/admin/members/view/{id}(id=${member.mnum})}">보기</a>
+                <a th:href="@{/admin/members/delete/{id}(id=${member.mnum})}"
+                   onclick="return confirm('정말 삭제하시겠습니까?');">삭제</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+<<<<<<< HEAD
+      "Read(C:\\dev\\project\\Dodam\\Dodam\\src\\main\\java\\com\\dodam\\board/**)",
+      "Bash(find:*)",
+      "Bash(gradle:*)",
+      "Bash(./gradlew:*)"
+=======
+      "Read(C:\\dev\\project\\Dodam\\Dodam\\src\\main\\java\\com\\dodam\\member\\repository/**)",
+      "Read(C:\\dev\\project\\Dodam\\Dodam\\src\\main\\java\\com\\dodam\\member\\entity/**)"
+>>>>>>> a0ba612 (Login & product adding)
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

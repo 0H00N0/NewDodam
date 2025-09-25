@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head><meta charset="UTF-8"><title>상품 일괄등록</title></head>
+<body>
+	<div th:replace="admin/fragments/header :: adminHeader"></div>
+	<div class="admin-body">
+	  <div th:replace="admin/fragments/sidebar :: adminSidebar"></div>
+	  <main class="admin-main">
+  <h1>상품 일괄등록</h1>
+
+  <p>
+    샘플 템플릿을 내려받아 작성하세요 →
+    <a th:href="@{/admin/product/bulk/template}">엑셀 템플릿 다운로드</a>
+  </p>
+
+  <form th:action="@{/admin/product/bulk-upload}" method="post" enctype="multipart/form-data"
+        onsubmit="return confirm('엑셀 파일로 상품을 일괄 등록하시겠습니까?');">
+    <input type="file" name="file" accept=".xlsx" required>
+    <button type="submit">업로드</button>
+  </form>
+
+  <div th:if="${result != null}">
+    <h3>결과</h3>
+    <p th:text="|총 ${result.total}건, 성공 ${result.success}건, 실패 ${#lists.size(result.errors)}건|"></p>
+    <ul>
+      <li th:each="e : ${result.errors}" th:text="${e}"></li>
+    </ul>
+    <p><a th:href="@{/admin/product/list}">목록으로</a></p>
+  </div>
+</body>
+</html>

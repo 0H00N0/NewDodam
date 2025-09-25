@@ -1,0 +1,61 @@
+<div th:fragment="adminHeader">
+  <style>
+    :root { --h:56px; --sbw:240px; --bg:#0f172a; --side:#111827; --text:#e5e7eb; --muted:#94a3b8; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:ui-sans-serif,system-ui,AppleSDGothicNeo,"Noto Sans KR",Segoe UI,Roboto,Arial}
+    .admin-header{position:fixed;top:0;left:0;right:0;height:var(--h);background:var(--bg);color:var(--text);
+      display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:1000}
+    .brand{font-weight:700;letter-spacing:.2px}
+    .header-right{display:flex;align-items:center;gap:12px}
+    .toggle-btn{display:none;cursor:pointer;border:1px solid #334155;border-radius:8px;padding:6px 10px;color:var(--text);background:#0b1220}
+    .admin-body{display:flex;margin-top:var(--h);min-height:calc(100vh - var(--h))}
+    .admin-sidebar{width:var(--sbw);background:var(--side);color:var(--text);position:sticky;top:var(--h);height:calc(100vh - var(--h));
+      padding:16px 10px;overflow:auto}
+    .admin-main{flex:1;padding:24px;background:#f1f5f9;min-width:0}
+
+    /* 상단 메뉴 */
+    .admin-nav{display:flex;align-items:center;gap:8px;margin:0 16px;flex:1;justify-content:center}
+    .admin-nav a{display:inline-block;padding:8px 12px;border-radius:8px;color:var(--text);text-decoration:none}
+    .admin-nav a:hover,.admin-nav a.active{background:#1f2937}
+
+    @media (max-width:1024px){
+      .admin-sidebar{position:fixed;left:-260px;top:var(--h);height:calc(100vh - var(--h));transition:left .2s}
+      body.side-open .admin-sidebar{left:0}
+      .toggle-btn{display:inline-flex}
+      .admin-nav{display:none} /* 모바일에서는 사이드바로 이동해 사용 */
+    }
+  </style>
+
+  <header class="admin-header">
+    <div class="brand">
+      <a th:href="@{/admin/main}" style="color:#e5e7eb;text-decoration:none">Dodam Admin</a>
+    </div>
+
+    <!-- 상단 메뉴 -->
+    <nav class="admin-nav">
+      <a th:href="@{/admin/notice/list}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI != null
+           and #httpServletRequest.requestURI.startsWith('/admin/notice/list')} ? ' active'">공지</a>
+      <a th:href="@{/admin/product/list}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/product')} ? ' active'">상품관리</a>
+      <a th:href="@{/admin/members}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/member')} ? ' active'">회원관리</a>
+      <a th:href="@{/admin/orders}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/orders')} ? ' active'">주문관리</a>
+      <a th:href="@{/admin/payments}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/payments')} ? ' active'">결제관리</a>
+      <a th:href="@{/admin/customers}"
+         th:classappend="${#httpServletRequest != null and #httpServletRequest.requestURI.startsWith('/admin/customers')} ? ' active'">고객관리</a>
+    </nav>
+
+    <div class="header-right">
+      <button class="toggle-btn" type="button" onclick="document.body.classList.toggle('side-open')">메뉴</button>
+
+      <!-- 로그인/사용자명 표시 -->
+      <a th:if="${#httpServletRequest == null or #httpServletRequest.remoteUser == null}"
+         th:href="@{/admin/login}">로그인</a>
+      <span th:if="${#httpServletRequest != null and #httpServletRequest.remoteUser != null}"
+            th:text="${#httpServletRequest.remoteUser}"></span>
+    </div>
+  </header>
+</div>

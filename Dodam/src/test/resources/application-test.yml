@@ -1,0 +1,49 @@
+spring:
+  profiles:
+    active: test
+    
+  # H2 인메모리 데이터베이스 설정 (테스트용)
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+    
+  # JPA 설정
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # 테스트 시마다 스키마 재생성
+    show-sql: false  # 테스트 시 SQL 로그 비활성화
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+    database-platform: org.hibernate.dialect.H2Dialect
+    defer-datasource-initialization: true
+    
+  # H2 콘솔 비활성화 (테스트에서는 불필요)
+  h2:
+    console:
+      enabled: false
+      
+  # SQL 스크립트 초기화 설정 (테스트에서는 비활성화 - JPA가 스키마 생성)
+  sql:
+    init:
+      mode: never
+      
+# 로깅 설정 (테스트 시 간소화)
+logging:
+  level:
+    com.dodam: DEBUG
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.h2: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# SpringDoc OpenAPI 비활성화 (테스트에서는 불필요)
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

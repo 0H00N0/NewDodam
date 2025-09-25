@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>상품 등록</title>
+</head>
+<body>
+	<div th:replace="admin/fragments/header :: adminHeader"></div>
+	<div class="admin-body">
+	  <div th:replace="admin/fragments/sidebar :: adminSidebar"></div>
+	  <main class="admin-main">
+  <div class="container">
+    <div class="header">
+      <h1>🛍️ 상품 등록</h1>
+      <p>새로운 상품을 등록하고 관리하세요</p>
+    </div>
+
+    <div class="form-container">
+      <form id="productForm"
+            th:action="${product.pronum == null} ? '/admin/product/add' : '/admin/product/edit/' + ${product.pronum}"
+            th:object="${product}" method="post">
+
+        <div class="form-grid">
+          <div class="section-title">기본 정보</div>
+
+          <!-- 카테고리: 연관객체의 PK에 직접 바인딩 -->
+          <div class="form-group">
+			<label for="categoryId">카테고리 <span class="required">*</span></label>
+			<select id="categoryId" name="category.catenum" required>
+			  <option value="">카테고리를 선택하세요</option>
+			  <option th:each="c : ${categories}" th:value="${c.catenum}" th:text="${c.catename}"
+			          th:selected="${product.category != null and product.category.catenum == c.catenum}"></option>
+			</select>
+          </div>
+
+          <!-- 등록자 표시용(서버에서 쿠키로 덮어씀) → 혼동 방지 위해 disabled -->
+          <div class="form-group">
+            <label for="creatorMemberId">등록자</label>
+            <input type="text" id="creatorMemberId" value="" disabled>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="name">상품명 <span class="required">*</span></label>
+            <input type="text" id="name" th:field="*{proname}" maxlength="200" required placeholder="상품명을 입력하세요">
+          </div>
+
+          <div class="form-group full-width">
+            <label for="description">상품 설명</label>
+            <textarea id="description" th:field="*{prodetai1}" placeholder="상품에 대한 상세한 설명을 입력하세요"></textarea>
+          </div>
+
+          <div class="section-title">가격 정보</div>
+
+          <div class="form-group">
+            <label for="listPrice">정가 <span class="required">*</span></label>
+            <input type="number" id="listPrice" th:field="*{proprice}" min="0" step="100" required placeholder="0">
+          </div>
+
+          <div class="form-group">
+            <label for="grade">상품등급</label>
+            <select id="grade" th:field="*{prograd}">
+              <option value="">선택하세요</option>
+              <option value="S">S급 (최상)</option>
+              <option value="A">A급 (상)</option>
+              <option value="B">B급 (중)</option>
+              <option value="C">C급 (하)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="rentPrice">대여가격 <span class="required">*</span></label>
+            <input type="number" id="rentPrice" th:field="*{prorent}" min="0" step="100" required placeholder="0" readonly>
+          </div>
+
+          <div class="section-title">상품 상세 정보</div>
+
+          <div class="form-group">
+            <label for="brand">브랜드</label>
+            <input type="text" id="brand" th:field="*{probrand}" maxlength="100" placeholder="브랜드명 입력">
+          </div>
+
+          <div class="form-group">
+            <label for="manufacturer">제조사</label>
+            <input type="text" id="manufacturer" th:field="*{promanuf}" maxlength="100" placeholder="제조사명 입력">
+          </div>
+
+          <div class="form-group">
+            <label for="safetyCert">안전인증</label>
+            <input type="text" id="safetyCert" th:field="*{prosafe}" maxlength="100" placeholder="KC인증 등">
+          </div>
+
+          <div class="section-title">추천 연령</div>
+
+          <div class="form-group">
+            <label for="recommendedAgeFrom">최소 연령</label>
+            <input type="number" id="recommendedAgeFrom" th:field="*{proagfr}" min="0" max="100" placeholder="0">
+          </div>
+
+          <div class="form-group">
+            <label for="recommendedAgeTo">최대 연령</label>
+            <input type="number" id="recommendedAgeTo" th:field="*{proagto}" min="0" max="100" placeholder="99">
+          </div>
+
+          <div class="form-group">
+            <label for="minRentalDays">최소 대여일</label>
+            <input type="number" id="minRentalDays" th:field="*{promind}" min="1" placeholder="1" value="1">
+          </div>
+
+          <div class="form-group">
+            <label for="status">상품 상태</label>
+            <select id="status" th:field="*{prostat}">
+              <option value="AVAILABLE">대여가능</option>
+              <option value="RENTED">대여중</option>
+              <option value="MAINTENANCE">대기중</option>
+              <option value="DISCONTINUED">대여불가</option>
+            </select>
+          </div>
+
+          <div class="form-group full-width">
+            <div class="checkbox-group">
+              <input type="checkbox" id="isPublic" th:field="*{proispu}">
+              <label for="isPublic">공개 여부</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="button" class="btn-secondary" onclick="resetForm()">초기화</button>
+          <button type="submit" class="btn-primary">상품 등록</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">✅ 상품이 성공적으로 등록되었습니다!</div>
+
+  <script>
+    // 쿠키에서 username 읽어 표시만(서버가 실제 procreat 세팅)
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return null;
+    }
+
+    window.addEventListener('load', function() {
+      const username = getCookie('username');
+      if (username) {
+        document.getElementById('creatorMemberId').value = username;
+      }
+      updateRentPrice();
+    });
+
+    function updateRentPrice() {
+      const listPrice = parseInt(document.getElementById('listPrice').value) || 0;
+      const grade = document.getElementById('grade').value;
+      let ratio = 0;
+      switch (grade) {
+        case 'S': ratio = 1.00; break;
+        case 'A': ratio = 0.90; break;
+        case 'B': ratio = 0.80; break;
+        case 'C': ratio = 0.70; break;
+        default: ratio = 0;
+      }
+      const rentPrice = Math.floor(listPrice * ratio);
+      document.getElementById('rentPrice').value = rentPrice;
+    }
+    document.getElementById('listPrice').addEventListener('input', updateRentPrice);
+    document.getElementById('grade').addEventListener('change', updateRentPrice);
+
+    // 제출: 지금은 AJAX 테스트용으로 막아둔 상태 → 실제 동작시키려면 preventDefault 제거
+	document.getElementById('productForm').addEventListener('submit', async function (e) {
+	  e.preventDefault();
+
+	  if (!confirm('상품을 등록하시겠습니까?')) return;
+
+	  const formData = new FormData(this);
+	  const data = {};
+	  for (const [k, v] of formData.entries()) if (v !== '') data[k] = v;
+	  data.proispu = document.getElementById('isPublic').checked;
+
+	  try {
+	    const res = await fetch(this.action, {
+	      method: 'POST',
+	      headers: {'Content-Type':'application/x-www-form-urlencoded'},
+	      body: new URLSearchParams(data).toString()
+	    });
+	    const result = await res.json();
+
+	    if (result.success) {
+	      alert('상품 등록이 완료되었습니다.');
+	      // 또는 showToast(); 후 setTimeout(...)
+	      window.location.href = '/admin/product';   // ← 여기서 직접 이동
+	    } else {
+	      alert(result.message || '등록 실패');
+	    }
+	  } catch (err) {
+	    alert('요청 중 오류: ' + err.message);
+	  }
+	});
+
+    function resetForm() {
+      if (confirm('모든 입력 내용을 초기화하시겠습니까?')) {
+        document.getElementById('productForm').reset();
+        updateRentPrice();
+      }
+    }
+
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+  </script>
+</body>
+</html>

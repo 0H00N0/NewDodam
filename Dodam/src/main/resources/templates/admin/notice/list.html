@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title>공지사항 목록</title>
+  <style>
+    /* 데모용 기본 레이아웃. 프로젝트 공통 CSS가 있다면 이 블록은 제거하세요. */
+    .admin-layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .admin-main { padding: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    thead th { background: #f5f5f5; }
+    a { color: #0a58ca; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <!-- 헤더 -->
+  <header th:replace="~{admin/fragments/header :: adminHeader}"></header>
+
+  <!-- 좌측 사이드바 + 우측 메인 -->
+  <div class="admin-layout">
+    <!-- 사이드바 -->
+    <aside th:replace="~{admin/fragments/sidebar :: adminSidebar}"></aside>
+
+    <!-- 메인 -->
+    <main class="admin-main">
+      <h1>공지사항 목록</h1>
+      <a href="/admin/notices/add">공지사항 추가</a>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>제목</th>
+            <th>작성일</th>
+            <th>고정</th>
+            <th>관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:if="${#lists.isEmpty(notices)}">
+            <td colspan="5">데이터가 없습니다.</td>
+          </tr>
+
+          <tr th:each="notice : ${notices}">
+            <td th:text="${notice.id}">1</td>
+            <td th:text="${notice.title}">제목</td>
+            <!-- 날짜 포맷 안전 처리 -->
+            <td th:text="${notice.createdAt != null ? #temporals.format(notice.createdAt,'yyyy-MM-dd HH:mm') : 'N/A'}">2025-09-04 12:00</td>
+            <td th:text="${notice.pinned}">false</td>
+            <td>
+              <a th:href="@{/admin/notices/edit/{id}(id=${notice.id})}">수정</a>
+              <a th:href="@{/admin/notices/delete/{id}(id=${notice.id})}"
+                 onclick="return confirm('정말 삭제하시겠습니까?');">삭제</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+</body>
+</html>
