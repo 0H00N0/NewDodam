@@ -28,8 +28,8 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     private final boolean isTest;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private static final Duration TIMEOUT_CONFIRM = Duration.ofSeconds(15);
-    private static final Duration TIMEOUT_LOOKUP  = Duration.ofSeconds(15);
+    private static final Duration TIMEOUT_CONFIRM = Duration.ofSeconds(60);
+    private static final Duration TIMEOUT_LOOKUP  = Duration.ofSeconds(60);
 
     public PlanPortoneClientServiceImpl(@Qualifier("portoneWebClient") WebClient portoneWebClient,
                                         PlanPortoneProperties props) {

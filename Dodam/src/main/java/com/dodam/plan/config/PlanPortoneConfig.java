@@ -21,8 +21,8 @@ import reactor.netty.http.client.HttpClient;
 @EnableConfigurationProperties(PlanPortoneProperties.class)
 public class PlanPortoneConfig {
 
-    // 네트워크/응답 타임아웃을 모두 15초로 통일
-    private static final Duration TIMEOUT_NETWORK = Duration.ofSeconds(15);
+    // 네트워크/응답 타임아웃을 모두 60초로 통일
+    private static final Duration TIMEOUT_NETWORK = Duration.ofSeconds(60);
     private static final int TIMEOUT_CONNECT_MS = 5_000;
 
     @Bean("portoneWebClient")

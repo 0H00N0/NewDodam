@@ -12,6 +12,7 @@ public class PlanPortoneProperties {
     private String v2Secret;    // Authorization: PortOne {v2Secret}
     private String storeId;
     private String channelKey;  // SDK 전용(서버 API에선 사용X)
+    private String webhookSecret;   // ★ 웹훅 서명 검증용 (필수)
     private String currency = "KRW";
     private Boolean isTest = false;
 

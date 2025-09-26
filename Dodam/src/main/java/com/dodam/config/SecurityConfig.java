@@ -53,7 +53,8 @@ public class SecurityConfig {
                 "/pg/transactions/**",
                 "/events/**",
                 "/admin/**",
-                "/board/**"
+                "/board/**",
+                "/pg/**"
             ))
             // 인가
             .authorizeHttpRequests(auth -> auth
@@ -61,8 +62,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/member/**").permitAll()
                 .requestMatchers("/webhooks/pg").permitAll()
+                .requestMatchers(HttpMethod.POST, "/webhooks/pg").permitAll()
                 .requestMatchers("/payments/**").permitAll()
                 .requestMatchers("/pg/payments/**").permitAll()
+                .requestMatchers("/pg/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/pg/payments/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/pg/transactions/**").permitAll()
                 .requestMatchers("/subscriptions/**").permitAll()
