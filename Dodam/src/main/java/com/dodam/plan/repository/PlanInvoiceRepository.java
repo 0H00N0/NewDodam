@@ -22,31 +22,31 @@ public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, 
 	Optional<PlanInvoiceEntity> findForUpdate(@Param("piId") Long piId);
 
 	/** PAID 처리 + piUid 비어있으면 세팅 */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        update PlanInvoiceEntity i
-           set i.piStat = :paid,
-               i.piPaid = :paidAt,
-               i.piUid  = coalesce(i.piUid, :uid)
-         where i.piId = :piId
-    """)
-    int markPaidAndSetUidIfEmpty(@Param("piId") Long piId,
-                                 @Param("uid") String uid,
-                                 @Param("paidAt") LocalDateTime paidAt,
-                                 @Param("paid") PlanEnums.PiStatus paid);
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			    update PlanInvoiceEntity i
+			       set i.piStat = :paid,
+			           i.piPaid = :paidAt,
+			           i.piUid  = coalesce(i.piUid, :uid)
+			     where i.piId = :piId
+			""")
+	int markPaidAndSetUidIfEmpty(@Param("piId") Long piId, @Param("uid") String uid,
+			@Param("paidAt") LocalDateTime paidAt, @Param("paid") PlanEnums.PiStatus paid);
 
-    default int markPaidAndSetUidIfEmpty(Long piId, String uid, LocalDateTime paidAt) {
-        return markPaidAndSetUidIfEmpty(piId, uid, paidAt, PlanEnums.PiStatus.PAID);
-    }
-	/** 컨트롤러에서 호출하는 메서드: “빈 구현”으로 제공해 컴파일/런타임 안전 */
-    default Optional<PlanInvoiceEntity> findRecentPendingSameAmount(
-            String mid,
-            PlanEnums.PiStatus status,
-            BigDecimal amount,
-            String currency,
-            LocalDateTime from,
-            LocalDateTime to
-    ) {
-        return Optional.empty();
-    }
+	default int markPaidAndSetUidIfEmpty(Long piId, String uid, LocalDateTime paidAt) {
+		return markPaidAndSetUidIfEmpty(piId, uid, paidAt, PlanEnums.PiStatus.PAID);
+	}
+
+	@Query("""
+			select i from PlanInvoiceEntity i
+			 where i.planMember.member.mid = :mid
+			   and i.piStat = :status
+			   and i.piAmount = :amount
+			   and i.piCurr = :currency
+			   and i.piStart between :from and :to
+			order by i.piId desc
+			""")
+	Optional<PlanInvoiceEntity> findRecentPendingSameAmount(@Param("mid") String mid,
+			@Param("status") PlanEnums.PiStatus status, @Param("amount") BigDecimal amount,
+			@Param("currency") String currency, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 }

@@ -52,7 +52,8 @@ public class SecurityConfig {
                 "/pg/payments/**",
                 "/pg/transactions/**",
                 "/events/**",
-                "/admin/**"
+                "/admin/**",
+                "/board/**"
             ))
             // 인가
             .authorizeHttpRequests(auth -> auth
@@ -79,6 +80,7 @@ public class SecurityConfig {
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/admin/**").permitAll()
                 .requestMatchers("/events/**").permitAll()
+                .requestMatchers("/board/**").permitAll()
                 .anyRequest().permitAll()
             )
             // 세션 기반

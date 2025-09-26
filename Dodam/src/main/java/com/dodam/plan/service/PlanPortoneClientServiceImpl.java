@@ -55,7 +55,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             String billingKey = json.path("billingKey").asText(null);
             if (billingKey != null) res.put("billingKey", billingKey);
             res.put("_raw", json);
-            log.info("[PortOne] issue confirm 200 OK billingKey={}", billingKey);
+            log.info("[PortOne] issue confirm OK billingKey={}", billingKey);
             return res;
 
         } catch (Exception e) {
@@ -100,7 +100,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             JsonNode root = safeJson(raw);
             String status = pickStatus(root);
 
-            // ⚠️ 여기서는 lookupPayment 호출 안 함! (웹훅이 최종 진실)
+            // 여기서는 lookup을 강제하지 않는다(웹훅/외부 폴링이 최종 진실).
             return new ConfirmResponse(req.paymentId(), status != null ? status : "PENDING", raw);
 
         } catch (Exception e) {
@@ -150,7 +150,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
                                 if (res.statusCode().isError()) {
                                     log.error("[PortOne] schedule billing-key {} {}", res.statusCode(), t);
                                 } else {
-                                    log.info("[PortOne OK] schedule created: {}", t);
+                                    log.info("[PortOne] schedule created: {}", t);
                                 }
                                 return t;
                             }))
@@ -182,14 +182,12 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             if (raw == null) return new LookupResponse(paymentId, "ERROR", "{\"error\":\"NO_RESPONSE\"}");
 
             JsonNode json = safeJson(raw);
-            // 요청한 id(merchant/payment/transaction)와 정확히 매칭되는 노드만 선택
             JsonNode node = findPaymentNode(json, paymentId);
 
             String id = pick(node, "id");
             if (id == null) id = pick(node.path("payment"), "id");
             String status = pickStatus(node);
 
-            // 매칭 실패 시 NOT_FOUND로 처리 (폴링 종료 조건)
             if (node == null || node.isMissingNode() || id == null) {
                 return new LookupResponse(paymentId, "NOT_FOUND", "{\"status\":\"NOT_FOUND\"}");
             }
