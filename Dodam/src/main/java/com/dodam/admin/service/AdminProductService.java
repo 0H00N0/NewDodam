@@ -14,10 +14,21 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+import java.io.Reader;
+import java.io.InputStreamReader;
+import com.opencsv.CSVReader;
+
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +37,7 @@ public class AdminProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final ProstateRepository prostateRepository;
+    private final FileUploadService fileUploadService; // 👈 추가
 
     @Transactional
     public ProductEntity createProduct(AdminProductRequestDTO requestDTO) {
@@ -161,5 +173,82 @@ public class AdminProductService {
         // 설정되어 있으므로, 상품만 삭제해도 연관된 이미지들이 자동으로 함께 삭제됩니다.
         productRepository.deleteById(productId);
     }
-    
+    /**
+     * ✅ CSV + 이미지 파일을 이용한 상품 일괄등록
+     */
+    @Transactional
+    public int bulkRegister(MultipartFile csvFile, MultipartFile[] images) throws Exception {
+        // 1. 업로드된 이미지 파일 저장 (원본명 → 서버 저장명 매핑)
+        Map<String, String> imagePathMap = saveImages(images);
+
+        // 2. CSV 파싱
+        List<ProductEntity> products = new ArrayList<>();
+        try (Reader reader = new InputStreamReader(csvFile.getInputStream());
+             CSVReader csvReader = new CSVReader(reader)) {
+
+            String[] line;
+            int row = 0;
+            while ((line = csvReader.readNext()) != null) {
+                if (row++ == 0) continue; // 헤더 스킵
+
+                // CSV → 상품 엔티티 변환
+                ProductEntity product = ProductEntity.builder()
+                        .proname(line[0])                                // 상품명
+                        .prodetail(line[1])                             // 상세설명
+                        .proprice(new BigDecimal(line[2]))              // 가격
+                        .proborrow(new BigDecimal(line[3]))             // 대여료
+                        .probrand(line[4])                              // 브랜드
+                        .promade(line[5])                               // 제조사
+                        .proage(Integer.parseInt(line[6]))              // 연령
+                        .procertif(line[7])                             // 인증
+                        .prodate(LocalDate.parse(line[8]))              // 출시일
+                        .resernum(Long.parseLong(line[9]))              // 예약번호
+                        .ctnum(Long.parseLong(line[10]))                // ctnum
+                        .category(categoryRepository.findById(Long.parseLong(line[11])).orElseThrow()) // 카테고리 FK
+                        .prostate(prostateRepository.findById(Long.parseLong(line[12])).orElseThrow()) // 상태 FK
+                        .images(new ArrayList<>())
+                        .build();
+
+                // 이미지 매핑 (메인/상세 이미지)
+                if (line.length > 13 && imagePathMap.containsKey(line[13])) {
+                    product.getImages().add(ProductImageEntity.builder()
+                            .prourl(imagePathMap.get(line[13])) // 메인 이미지 경로
+                            .proimageorder(1)
+                            .product(product)
+                            .category(product.getCategory())
+                            .build());
+                }
+                if (line.length > 14 && imagePathMap.containsKey(line[14])) {
+                    product.getImages().add(ProductImageEntity.builder()
+                            .prodetailimage(imagePathMap.get(line[14])) // 상세 이미지 경로
+                            .proimageorder(2)
+                            .product(product)
+                            .category(product.getCategory())
+                            .build());
+                }
+
+                products.add(product);
+                System.out.println("CSV 이미지명: " + line[13]);
+
+                System.out.println("업로드된 파일명 map keys: " + imagePathMap.keySet());
+            }
+        }
+        
+        // 3. Bulk Insert
+        productRepository.saveAll(products);
+        return products.size();
+    }
+
+    /**
+     * 이미지 파일 저장 후 (원본명 → 서버 저장명) 매핑 리턴
+     */
+    private Map<String, String> saveImages(MultipartFile[] images) throws IOException {
+        Map<String, String> map = new HashMap<>();
+        for (MultipartFile file : images) {
+            String storedFileName = fileUploadService.storeFile(file); // UUID_파일명 반환
+            map.put(file.getOriginalFilename(), storedFileName);
+        }
+        
+        return map;
+    }
 }

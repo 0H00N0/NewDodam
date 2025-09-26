@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -71,5 +72,22 @@ public class AdminProductController {
         adminProductService.deleteProduct(productId);
         // 성공적으로 삭제되었으며, 별도의 본문(body)이 없음을 의미하는 204 No Content 상태를 반환합니다.
         return ResponseEntity.noContent().build();
+    }
+    /**
+     * ✅ 상품 일괄등록 API
+     * - CSV 파일과 이미지 파일들을 함께 업로드
+     * - CSV에는 상품 정보 + 이미지 파일명을 기록
+     */
+    @PostMapping("/bulk-upload")
+    public ResponseEntity<?> bulkUploadProducts(
+            @RequestParam("file") MultipartFile csvFile,
+            @RequestParam("images") MultipartFile[] images) {
+        try {
+            int count = adminProductService.bulkRegister(csvFile, images);
+            return ResponseEntity.ok(Map.of("registeredCount", count));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("일괄등록 실패: " + e.getMessage());
+        }
     }
 }
