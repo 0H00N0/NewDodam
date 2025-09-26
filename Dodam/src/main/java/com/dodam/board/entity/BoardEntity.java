@@ -52,7 +52,7 @@ public class BoardEntity {
     private String code;
     // --- 관계 매핑 ---
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "boardid", nullable = false)  // ← referencedColumnName 제거!
+    @JoinColumn(name = "boardid", nullable = true)  // ← referencedColumnName 제거!
     private BoardEntity board;
     
     // Board(N) : BoardCategory(1) -> 다대일 관계
