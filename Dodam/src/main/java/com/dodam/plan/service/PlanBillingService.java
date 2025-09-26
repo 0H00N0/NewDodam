@@ -33,27 +33,27 @@ public class PlanBillingService {
 
     private static final ObjectMapper OM = new ObjectMapper();
 
+    /** 결제 시도 기록 + 인보이스 상태 전이 + (성공 시) 카드메타 안전 업데이트 */
     @Transactional
     public void recordAttempt(Long invoiceId,
                               boolean success,
                               String failReason,
-                              String respUid,
-                              String receiptUrl,
-                              String respJson) {
-
+                              String respUid,     // provider paymentId / txId 등
+                              String receiptUrl,  // 영수증 URL(명시적 전달 시)
+                              String respJson) {  // 게이트웨이 원문 JSON
         if (log.isDebugEnabled()) {
-            String respJsonPreview = (respJson == null) ? "null"
+            String preview = (respJson == null) ? "null"
                     : (respJson.length() > 300 ? respJson.substring(0, 300) + "...(truncated)" : respJson);
             log.debug("[recordAttempt] invoiceId={}, success={}, failReason={}, respUid={}, receiptUrl={}, respJsonPreview={}",
-                    invoiceId, success, failReason, respUid, receiptUrl, respJsonPreview);
+                    invoiceId, success, failReason, respUid, receiptUrl, preview);
         }
 
-        // 1) 인보이스
+        // 1) 인보이스 조회
         PlanInvoiceEntity inv = invoiceRepo.findById(invoiceId)
                 .orElseThrow(() -> new IllegalArgumentException("INVOICE_NOT_FOUND:" + invoiceId));
 
-        // 2) Attempt 기록 (영수증 URL은 respUid 기준 정확 추출)
-        String resolvedReceipt = resolveReceiptUrl(receiptUrl, respJson, respUid); // ★ respUid 전달
+        // 2) Attempt 저장 (영수증 URL은 respUid 기준으로 정확 추출)
+        String resolvedReceipt = resolveReceiptUrl(receiptUrl, respJson, respUid);
         PlanAttemptEntity att = PlanAttemptEntity.builder()
                 .invoice(inv)
                 .pattResult(success ? PattResult.SUCCESS : PattResult.FAIL)
@@ -74,48 +74,54 @@ public class PlanBillingService {
             inv.setPiPaid(LocalDateTime.now());
         } else {
             String reason = (failReason == null ? "" : failReason).toUpperCase(Locale.ROOT).trim();
+            // confirm 단계에서의 ACCEPTED/PENDING은 상태 전이 금지(PENDING 유지)
             if (reason.startsWith("LOOKUP:FAILED") || reason.startsWith("LOOKUP:CANCELED") || reason.startsWith("LOOKUP:CANCELLED")) {
                 inv.setPiStat(PiStatus.FAILED);
             } else {
+                // 최초 상태가 없거나 FAILED였다면 PENDING으로 올려 둔다
                 if (inv.getPiStat() == null || inv.getPiStat() == PiStatus.FAILED) {
                     inv.setPiStat(PiStatus.PENDING);
                 }
             }
         }
         invoiceRepo.save(inv);
+        log.debug("[recordAttempt] invoice state changed: {} -> {}, piPaid={}", before, inv.getPiStat(), inv.getPiPaid());
 
-        log.debug("[recordAttempt] invoice state changed: {} -> {}, piPaid={}",
-                before, inv.getPiStat(), inv.getPiPaid());
-
-        // 4) 카드 메타 저장
+        // 4) 카드 메타 저장 (성공시에만, 그리고 인보이스의 PlanMember.payment에 한정)
         try {
             if (success && StringUtils.hasText(respJson)) {
-                PlanPaymentEntity targetPayment = null;
-
                 PlanMember pm = inv.getPlanMember();
-                if (pm != null) targetPayment = pm.getPayment();
+                PlanPaymentEntity targetPayment = (pm != null) ? pm.getPayment() : null;
 
                 if (targetPayment == null) {
-                    String usedBillingKey = extractBillingKey(respJson);
-                    if (log.isDebugEnabled()) {
-                        log.debug("[recordAttempt] fallback billingKey from respJson = {}", usedBillingKey);
-                    }
-                    if (StringUtils.hasText(usedBillingKey)) {
-                        targetPayment = paymentRepo.findByPayKey(usedBillingKey).orElse(null);
-                    }
+                    log.warn("[Billing] skip card meta: invoice has no bound payment (invoiceId={})", invoiceId);
+                    return;
                 }
 
-                if (targetPayment == null) {
-                    log.warn("[Billing] skip card meta: no target payment found (invoice={})", invoiceId);
-                } else {
-                    PlanCardMeta meta = pgSvc.extractCardMeta(respJson);
-                    if (log.isDebugEnabled()) log.debug("[recordAttempt] extracted card meta: {}", meta);
+                // 게이트웨이 응답에서 billingKey 추출
+                String usedBillingKey = extractBillingKey(respJson);
+                if (log.isDebugEnabled()) {
+                    log.debug("[recordAttempt] used billingKey from gateway = {}", usedBillingKey);
+                }
 
-                    // last4 보정
-                    if (meta != null && StringUtils.hasText(meta.getLast4())) {
-                        String digits = meta.getLast4().replaceAll("\\D", "");
-                        if (digits.length() >= 4) {
-                            meta = new PlanCardMeta(
+                // 🔒 응답 billingKey와 인보이스에 묶인 결제수단의 key가 다르면 업데이트 금지
+                if (StringUtils.hasText(usedBillingKey) &&
+                        StringUtils.hasText(targetPayment.getPayKey()) &&
+                        !usedBillingKey.equals(targetPayment.getPayKey())) {
+                    log.warn("[Billing] card meta mismatch -> skip update (invoiceId={}, target.payId={}, target.key={}, resp.key={})",
+                            invoiceId, targetPayment.getPayId(), mask(targetPayment.getPayKey()), mask(usedBillingKey));
+                    return;
+                }
+
+                // 카드 메타 추출 및 보정
+                PlanCardMeta meta = pgSvc.extractCardMeta(respJson);
+                if (log.isDebugEnabled()) log.debug("[recordAttempt] extracted card meta: {}", meta);
+
+                // last4 숫자 보정
+                if (meta != null && StringUtils.hasText(meta.getLast4())) {
+                    String digits = meta.getLast4().replaceAll("\\D", "");
+                    if (digits.length() >= 4) {
+                        meta = new PlanCardMeta(
                                 meta.getBillingKey(),
                                 meta.getBrand(),
                                 meta.getBin(),
@@ -123,50 +129,50 @@ public class PlanBillingService {
                                 meta.getPg(),
                                 false,
                                 null
-                            );
-                        }
+                        );
                     }
+                }
 
-                    boolean changed = false;
-                    if (meta != null) {
-                        if (StringUtils.hasText(meta.getBin()) &&
-                                !meta.getBin().equals(targetPayment.getPayBin())) {
-                            targetPayment.setPayBin(meta.getBin());
-                            changed = true;
-                        }
-                        if (StringUtils.hasText(meta.getBrand()) &&
-                                !meta.getBrand().equals(targetPayment.getPayBrand())) {
-                            targetPayment.setPayBrand(meta.getBrand());
-                            changed = true;
-                        }
-                        if (StringUtils.hasText(meta.getLast4()) &&
-                                !meta.getLast4().equals(targetPayment.getPayLast4())) {
-                            targetPayment.setPayLast4(meta.getLast4());
-                            changed = true;
-                        }
-                        if (StringUtils.hasText(meta.getPg()) &&
-                                !meta.getPg().equals(targetPayment.getPayPg())) {
-                            targetPayment.setPayPg(meta.getPg());
-                            changed = true;
-                        }
-                    }
-
-                    if (!StringUtils.hasText(targetPayment.getPayRaw()) && StringUtils.hasText(respJson)) {
-                        targetPayment.setPayRaw(respJson);
+                boolean changed = false;
+                if (meta != null) {
+                    if (StringUtils.hasText(meta.getBin()) &&
+                            !meta.getBin().equals(targetPayment.getPayBin())) {
+                        targetPayment.setPayBin(meta.getBin());
                         changed = true;
                     }
-
-                    if (changed) {
-                        paymentRepo.save(targetPayment);
-                        log.info("[Billing] cardMeta updated (payId={}) meta={{bin={}, brand={}, last4={}, pg={}}}",
-                                targetPayment.getPayId(),
-                                targetPayment.getPayBin(),
-                                targetPayment.getPayBrand(),
-                                targetPayment.getPayLast4(),
-                                targetPayment.getPayPg());
-                    } else {
-                        log.info("[Billing] cardMeta skipped (no new fields) for payId={}", targetPayment.getPayId());
+                    if (StringUtils.hasText(meta.getBrand()) &&
+                            !meta.getBrand().equals(targetPayment.getPayBrand())) {
+                        targetPayment.setPayBrand(meta.getBrand());
+                        changed = true;
                     }
+                    if (StringUtils.hasText(meta.getLast4()) &&
+                            !meta.getLast4().equals(targetPayment.getPayLast4())) {
+                        targetPayment.setPayLast4(meta.getLast4());
+                        changed = true;
+                    }
+                    if (StringUtils.hasText(meta.getPg()) &&
+                            !meta.getPg().equals(targetPayment.getPayPg())) {
+                        targetPayment.setPayPg(meta.getPg());
+                        changed = true;
+                    }
+                }
+
+                // 원문 저장(처음 한 번만)
+                if (!StringUtils.hasText(targetPayment.getPayRaw()) && StringUtils.hasText(respJson)) {
+                    targetPayment.setPayRaw(respJson);
+                    changed = true;
+                }
+
+                if (changed) {
+                    paymentRepo.save(targetPayment);
+                    log.info("[Billing] cardMeta updated (payId={}) meta={{bin={}, brand={}, last4={}, pg={}}}",
+                            targetPayment.getPayId(),
+                            targetPayment.getPayBin(),
+                            targetPayment.getPayBrand(),
+                            targetPayment.getPayLast4(),
+                            targetPayment.getPayPg());
+                } else {
+                    log.info("[Billing] cardMeta skipped (no new fields) for payId={}", targetPayment.getPayId());
                 }
             }
         } catch (Exception e) {
@@ -174,27 +180,27 @@ public class PlanBillingService {
         }
     }
 
-    // --- helpers ---
-    /** respUid(=해당 시도 id: txId/payId/invId) 기준으로 정확히 해당 노드에서 영수증 URL 추출 */
+    // ===== helpers =====
+    /** respUid 기준으로 가장 그럴듯한 위치에서 영수증 URL 추출 */
     private String resolveReceiptUrl(String explicitReceipt, String rawJson, String targetId) {
         if (StringUtils.hasText(explicitReceipt)) return explicitReceipt;
         if (!StringUtils.hasText(rawJson)) return null;
         try {
             JsonNode root = OM.readTree(rawJson);
 
-            // 최상위 먼저
+            // 우선 최상위 후보
             String v = firstNonBlank(
                     get(root, "receiptUrl"),
                     get(root, "receipt", "url"),
                     get(root, "urls", "receipt"),
                     get(root, "payment", "receiptUrl"),
                     get(root, "payment", "receipt", "url"),
-                    get(root, "transactions") != null && root.path("transactions").isArray() && root.path("transactions").size() > 0
+                    (root.has("transactions") && root.path("transactions").isArray() && root.path("transactions").size() > 0)
                             ? get(root.path("transactions").get(0), "receiptUrl") : null
             );
             if (StringUtils.hasText(v)) return v;
 
-            // 정확 매칭 노드에서 재탐색
+            // targetId가 일치하는 노드에서 재탐색
             JsonNode node = findPaymentNode(root, targetId);
             return firstNonBlank(
                     get(node, "receiptUrl"),
@@ -246,12 +252,10 @@ public class PlanBillingService {
         if (root == null || root.isMissingNode()) return OM.createObjectNode();
         if (root.isArray()) return root.size() > 0 ? root.get(0) : OM.createObjectNode();
         if (root.has("items") && root.path("items").isArray()) {
-            JsonNode arr = root.path("items");
-            return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
+            JsonNode arr = root.path("items"); return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
         }
         if (root.has("content") && root.path("content").isArray()) {
-            JsonNode arr = root.path("content");
-            return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
+            JsonNode arr = root.path("content"); return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
         }
         return root;
     }
@@ -286,4 +290,9 @@ public class PlanBillingService {
     }
 
     private static String n(String s){ return (s==null || s.isBlank()) ? null : s; }
+
+    private static String mask(String v) {
+        if (!StringUtils.hasText(v)) return v;
+        return (v.length() <= 8) ? "****" + v : v.substring(0, 4) + "****" + v.substring(v.length() - 4);
+    }
 }

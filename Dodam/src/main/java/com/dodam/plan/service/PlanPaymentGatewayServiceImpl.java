@@ -151,13 +151,20 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
         return new PlanPayResult(success, payUidToStore, receiptUrl, success ? null : status, status, rawToStore);
     }
 
+    /**
+     * 공급사 조회에 사용할 paymentId 보정
+     * - inv{invoiceId}-u{uuid} 형태면 invoiceId로 DB에서 최신 providerUid를 역참조
+     * - 그렇지 않으면 그대로 사용
+     */
     private String resolvePaymentId(String anyId) {
         if (!StringUtils.hasText(anyId)) return anyId;
         if (anyId.startsWith("inv")) {
             Long invoiceId = extractInvoiceId(anyId);
-            return attemptRepo.findLatestPaymentUidByInvoiceId(invoiceId)
-                    .filter(StringUtils::hasText)
-                    .orElse(null);
+            if (invoiceId != null) {
+                return attemptRepo.findLatestPaymentUidByInvoiceId(invoiceId)
+                        .filter(StringUtils::hasText)
+                        .orElse(anyId);
+            }
         }
         return anyId;
     }
@@ -210,7 +217,7 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
         }
         try {
             JsonNode root = mapper.readTree(rawJson);
-            JsonNode node = firstPaymentNode(root); // 기본: 첫 노드(호출부에서 targetId 전달 없으므로)
+            JsonNode node = firstPaymentNode(root); // 기본: 첫 노드
 
             // 카드정보가 없는 경우 items 전체 훑어 첫 카드정보 있는 노드 사용
             if (get(node, "method", "card", "brand") == null && root.has("items") && root.path("items").isArray()) {
@@ -252,9 +259,19 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
     }
 
     // ---- 유틸 ----
+    /**
+     * inv{digits}-u{uuid...} 에서 digits 부분만 추출
+     */
     private Long extractInvoiceId(String uid) {
-        String num = uid.replaceFirst("^inv","").split("-")[0].replaceAll("[^0-9]","");
-        return Long.parseLong(num);
+        if (!StringUtils.hasText(uid)) return null;
+        try {
+            String num = uid.replaceFirst("^inv","")
+                    .split("-u")[0]
+                    .replaceAll("[^0-9]","");
+            return Long.parseLong(num);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String get(JsonNode n, String... path) {
@@ -324,6 +341,7 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
     private boolean isPaidStatus(String status) {
         String s = norm(status);
         return s.equals("PAID") || s.equals("SUCCEEDED") || s.equals("SUCCESS") || s.equals("PARTIAL_PAID");
+        // 필요 시 CAPTURED 등 추가
     }
     private boolean isFailedStatus(String status) {
         String s = norm(status);
