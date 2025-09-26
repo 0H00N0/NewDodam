@@ -66,6 +66,12 @@ public class PlanPgWebhookController {
                 return ResponseEntity.ok().build();
             }
             PlanInvoiceEntity inv = optInv.get();
+            
+            // 🛡️ Idempotency / 역순 보호: 이미 PAID면 빠른 종료
+            if (inv.getPiStat() == com.dodam.plan.enums.PlanEnums.PiStatus.PAID) {
+            	log.info("[WEBHOOK] skip: invoice already PAID (piId={}, anyId={})", inv.getPiId(), anyId);
+            	return ResponseEntity.ok().build();
+            }
 
             final String st = normUp(statusRaw);
             if (isPaid(st)) {

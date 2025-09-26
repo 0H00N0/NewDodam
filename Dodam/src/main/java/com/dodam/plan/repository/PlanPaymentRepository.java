@@ -13,8 +13,13 @@ public interface PlanPaymentRepository extends JpaRepository<PlanPaymentEntity, 
     boolean existsByMidAndPayKey(String mid, String payKey);
     List<PlanPaymentEntity> findByMidOrderByPayIdDesc(String mid);
     Optional<PlanPaymentEntity> findTop1ByMidOrderByPayIdDesc(String mid);
+    /** 특정 회원(mid)의 가장 최근 결제수단 */
     Optional<PlanPaymentEntity> findTopByMidOrderByPayIdDesc(String mid);
+
+    /** billingKey(payKey)로 결제수단 찾기 */
     Optional<PlanPaymentEntity> findByPayKey(String payKey);
+
+    /** 회원 + billingKey 조합으로 찾기 (추가 안전장치용) */
     Optional<PlanPaymentEntity> findByMidAndPayKey(String mid, String payKey);
 
     default Optional<PlanPaymentEntity> findByMemberAndPayKey(MemberEntity member, String payKey) {

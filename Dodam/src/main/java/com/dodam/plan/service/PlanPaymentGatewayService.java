@@ -1,4 +1,3 @@
-// src/main/java/com/dodam/plan/service/PlanPaymentGatewayService.java
 package com.dodam.plan.service;
 
 import com.dodam.plan.dto.PlanCardMeta;
@@ -29,7 +28,7 @@ public interface PlanPaymentGatewayService {
     /** 결제 단건 조회 */
     PlanLookupResult lookup(String paymentId);
 
-    /* ===== 결과 타입 ===== */
+    /* ===== 결과 타입 (레거시) ===== */
     record PayResult(String paymentId, String status, String raw) {}
     record LookupResult(String paymentId, String status, String raw) {}
 

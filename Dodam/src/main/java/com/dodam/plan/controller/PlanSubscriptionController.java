@@ -56,14 +56,31 @@ public class PlanSubscriptionController {
         if (!StringUtils.hasText(planCode)) {
             return ResponseEntity.badRequest().body(Map.of("error", "MISSING_PLAN_CODE"));
         }
- 
-        // 1) 회원/결제수단/플랜/약정 조회
+
+        // 1) 회원 조회
         MemberEntity member = memberRepo.findByMid(mid)
                 .orElseThrow(() -> new IllegalStateException("회원 정보를 찾을 수 없습니다. mid=" + mid));
 
-        PlanPaymentEntity payment = paymentRepo.findTopByMidOrderByPayIdDesc(mid)
-                .orElseThrow(() -> new IllegalStateException("결제수단이 없습니다. 먼저 카드(빌링키)를 등록하세요."));
+        // ✅ 결제수단 선택 (payId → billingKey → fallback 최신순)
+        PlanPaymentEntity payment;
+        if (req.getPayId() != null) {
+            payment = paymentRepo.findById(req.getPayId())
+                    .orElseThrow(() -> new IllegalStateException("선택한 결제수단을 찾을 수 없습니다. payId=" + req.getPayId()));
+            if (!payment.getMid().equals(mid)) {
+                throw new IllegalStateException("본인 소유 카드가 아닙니다. mid=" + mid + ", payId=" + req.getPayId());
+            }
+        } else if (StringUtils.hasText(req.getBillingKey())) {
+            payment = paymentRepo.findByPayKey(req.getBillingKey())
+                    .orElseThrow(() -> new IllegalStateException("해당 빌링키 결제수단이 없습니다. billingKey=" + req.getBillingKey()));
+            if (!payment.getMid().equals(mid)) {
+                throw new IllegalStateException("본인 소유 빌링키가 아닙니다. mid=" + mid + ", billingKey=" + req.getBillingKey());
+            }
+        } else {
+            payment = paymentRepo.findTopByMidOrderByPayIdDesc(mid)
+                    .orElseThrow(() -> new IllegalStateException("결제수단이 없습니다. 먼저 카드(빌링키)를 등록하세요."));
+        }
 
+        // 2) 플랜/약정 조회
         PlansEntity plan = plansRepo.findByPlanCodeIgnoreCase(planCode)
                 .orElseGet(() -> plansRepo.findByPlanCodeEqualsIgnoreCase(planCode)
                         .orElseThrow(() -> new IllegalStateException("플랜 코드가 유효하지 않습니다. planCode=" + planCode)));
@@ -71,10 +88,10 @@ public class PlanSubscriptionController {
         PlanTermsEntity terms = termsRepo.findByPtermMonth(months)
                 .orElseThrow(() -> new IllegalStateException("해당 개월 약정이 없습니다. months=" + months));
 
-        // 2) 결제 모드 결정
+        // 3) 결제 모드 결정
         final String mode = (months == 1) ? "MONTHLY" : "PREPAID_TERM";
 
-        // 3) 가격 조회
+        // 4) 가격 조회
         PlanPriceEntity price = priceRepo
                 .findFirstByPlan_PlanIdAndPterm_PtermIdAndPpriceBilModeAndPpriceActiveTrue(
                         plan.getPlanId(), terms.getPtermId(), mode)
@@ -85,13 +102,13 @@ public class PlanSubscriptionController {
         final BigDecimal amount = price.getPpriceAmount();
         final String currency = StringUtils.hasText(price.getPpriceCurr()) ? price.getPpriceCurr() : "KRW";
 
-        // 4) PlanMember upsert
+        // 5) PlanMember upsert
         PlanMember pm = planMemberRepo.findByMember_Mid(mid).orElse(null);
         if (pm == null) {
             LocalDateTime now = LocalDateTime.now();
             pm = PlanMember.builder()
                     .member(member)
-                    .payment(payment)
+                    .payment(payment) // 최초 생성 시 연결
                     .plan(plan)
                     .terms(terms)
                     .price(price)
@@ -105,10 +122,25 @@ public class PlanSubscriptionController {
                     .pmCancelCheck(false)
                     .build();
             pm = planMemberRepo.save(pm);
-            log.info("[subscriptions/start] PlanMember created mid={}, pmId={}", mid, pm.getPmId());
+            log.info("[subscriptions/start] PlanMember created mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
+        } else {
+            // ✅ 기존 PlanMember가 있는 경우, 이번 결제에 선택한 카드로 갱신 (핵심 수정)
+            boolean updated = false;
+            if (pm.getPayment() == null || !pm.getPayment().getPayId().equals(payment.getPayId())) {
+                pm.setPayment(payment);
+                updated = true;
+                log.info("[subscriptions/start] PlanMember payment updated mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
+            }
+            // (선택) 플랜/약정/가격도 요청값과 다르면 동기화
+            if (!pm.getPlan().getPlanId().equals(plan.getPlanId())) { pm.setPlan(plan); updated = true; }
+            if (!pm.getTerms().getPtermId().equals(terms.getPtermId())) { pm.setTerms(terms); updated = true; }
+            if (!pm.getPrice().getPpriceId().equals(price.getPpriceId())) { pm.setPrice(price); updated = true; }
+            if (updated) {
+                planMemberRepo.save(pm);
+            }
         }
 
-        // 5) 멱등 체크 (최근 10분 내 동일 금액/통화 PENDING)
+        // 6) 멱등 체크 (최근 10분 내 동일 금액/통화 PENDING)
         final LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
         final LocalDateTime from = now.minusMinutes(10);
         var recentOpt = invoiceRepo.findRecentPendingSameAmount(mid, PiStatus.PENDING, amount, currency, from, now);
@@ -123,10 +155,11 @@ public class PlanSubscriptionController {
             body.put("currency", inv.getPiCurr());
             body.put("start", inv.getPiStart());
             body.put("end", inv.getPiEnd());
+            body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null); // 디버깅용 반환
             return ResponseEntity.ok(body);
         }
 
-        // 6) 신규 인보이스 생성
+        // 7) 신규 인보이스 생성
         var inv = PlanInvoiceEntity.builder()
                 .planMember(pm)
                 .piStart(now)
@@ -137,7 +170,7 @@ public class PlanSubscriptionController {
                 .build();
         invoiceRepo.save(inv);
 
-        log.info("[subscriptions/start] PENDING_CREATED mid={}, invoiceId={}", mid, inv.getPiId());
+        log.info("[subscriptions/start] PENDING_CREATED mid={}, invoiceId={}, payId={}", mid, inv.getPiId(), pm.getPayment() != null ? pm.getPayment().getPayId() : null);
 
         Map<String, Object> body = new HashMap<>();
         body.put("message", "PENDING_CREATED");
@@ -146,6 +179,7 @@ public class PlanSubscriptionController {
         body.put("currency", inv.getPiCurr());
         body.put("start", inv.getPiStart());
         body.put("end", inv.getPiEnd());
+        body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null); // 디버깅용 반환
         return ResponseEntity.ok(body);
     }
 
@@ -162,9 +196,8 @@ public class PlanSubscriptionController {
         }
 
         try {
-            // 1) 인보이스 생성 or 재사용 (네 기존 /start 로직을 내부 메서드로 뽑거나, 여기서 재사용)
             var result = subscriptionService.chargeAndConfirm(mid, req);
-            return ResponseEntity.ok(result); // result 안에 invoiceId, paymentId, status, receiptUrl 등
+            return ResponseEntity.ok(result);
         } catch (IllegalStateException ex) {
             log.warn("[charge-and-confirm] {}", ex.getMessage(), ex);
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
