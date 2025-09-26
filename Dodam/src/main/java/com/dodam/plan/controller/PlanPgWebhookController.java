@@ -184,7 +184,7 @@ public class PlanPgWebhookController {
     }
     private static boolean isFailed(String s){
         String u = normUp(s);
-        return "FAILED".equals(u) || "CANCELED".equals(u) || "CANCELLED".equals(u);
+        return "FAILED".equals(u) || "CANCELED".equals(u) || "CANCELLED".equals(u) || "ERROR".equals(u);
     }
 
     private Optional<PlanInvoiceEntity> findByInvLike(String anyId){

@@ -82,14 +82,14 @@ public class PlanPaymentController {
         final String customerId = resolveCustomerId(pm.getMember());
         final long amount = toLongAmount(inv.getPiAmount());
 
-        // ✅ 고유 paymentId 생성 (충돌 방지): inv{invoiceId}-u{uuid}
+        // 고유 paymentId 생성: inv{invoiceId}-u{uuid}
         final String paymentId = "inv" + invoiceId + "-u" + UUID.randomUUID();
 
-        // 비동기 confirm → 결과는 웹훅에서 최종 반영
+        // 비동기 confirm → 결과는 웹훅/추후조회로 반영
         paymentExecutor.submit(() -> {
             try {
                 var r = pgSvc.payByBillingKey(paymentId, billingKey, amount, customerId);
-                // 웹훅이 최종 진실 → 여기서는 내가 발급한 orderId(paymentId)만 기록
+                // 웹훅이 최종 진실 → 여기서는 "대기"로 기록
                 billingSvc.recordAttempt(inv.getPiId(), false, "ACCEPTED", paymentId, null, r.rawJson());
             } catch (Exception e) {
                 log.error("[payments/confirm-async] paymentId={}, error: {}", paymentId, e.toString(), e);
@@ -138,18 +138,7 @@ public class PlanPaymentController {
         ));
     }
 
-    /** 간단 상태 조회 */
-    @GetMapping("/{paymentId}/status")
-    public ResponseEntity<?> status(@PathVariable("paymentId") String paymentId) {
-        var r = pgSvc.safeLookup(paymentId);
-        return ResponseEntity.ok(Map.of(
-                "paymentId", r.paymentId(),
-                "status",    r.status(),
-                "raw",       r.rawJson()
-        ));
-    }
-
-    /** 폴링 엔드포인트: done=true 조건에 NOT_FOUND 포함 → 무한 폴링 방지 */
+    /** 간단 상태 조회 (DB 우선, 그 외 게이트웨이 보조) */
     @GetMapping("/{paymentId}")
     public ResponseEntity<?> getPaymentStatus(@PathVariable("paymentId") String paymentId) {
         Long invoiceId = parseInvoiceId(paymentId);
@@ -195,8 +184,9 @@ public class PlanPaymentController {
             String s = String.valueOf(r.status()).toUpperCase();
 
             boolean gwDone = switch (s) {
-                case "PAID", "SUCCEEDED", "SUCCESS", "FAILED", "CANCELED", "CANCELLED" -> true;
-                default -> false; // NOT_FOUND 포함: false
+                case "PAID", "SUCCEEDED", "SUCCESS", "PARTIAL_PAID", "FAILED", "CANCELED", "CANCELLED" -> true;
+                case "NOT_FOUND", "PENDING", "ACCEPTED", "READY" -> false; // 생성 전/승인대기/준비 상태는 계속 폴링
+                default -> false;
             };
 
             return ResponseEntity.ok()
@@ -212,9 +202,11 @@ public class PlanPaymentController {
 
         var r = pgSvc.safeLookup(paymentId);
         String s = String.valueOf(r.status()).toUpperCase();
+
         boolean gwDone = switch (s) {
-            case "PAID", "SUCCEEDED", "SUCCESS", "FAILED", "CANCELED", "CANCELLED" -> true;
-            default -> false; // NOT_FOUND 포함: false
+            case "PAID", "SUCCEEDED", "SUCCESS", "PARTIAL_PAID", "FAILED", "CANCELED", "CANCELLED" -> true;
+            case "NOT_FOUND", "PENDING", "ACCEPTED", "READY" -> false; // 생성 전/승인대기/준비 상태는 계속 폴링
+            default -> false;
         };
 
         return ResponseEntity.ok()
@@ -253,11 +245,5 @@ public class PlanPaymentController {
         } catch (Exception ignore) {
             return null;
         }
-    }
-
-    private static String maskKey(String key) {
-        if (key == null) return null;
-        if (key.length() <= 8) return "****" + key;
-        return key.substring(0,4) + "****" + key.substring(key.length()-4);
     }
 }

@@ -33,14 +33,21 @@ public class PlanBillingService {
 
     private static final ObjectMapper OM = new ObjectMapper();
 
-    /** 결제 시도 기록 + 인보이스 상태 전이 + (성공 시) 카드메타 안전 업데이트 */
+    /**
+     * 결제 시도 기록 + 인보이스 상태 전이 + (성공 시) 카드메타 안전 업데이트
+     *
+     * 규칙 요약
+     * - success=true            → PattResult.SUCCESS, pattFail=null, 인보이스=PAID
+     * - failReason=ACCEPTED/PENDING → PattResult.FAIL 이지만 pattFail=false (보류), 인보이스=PENDING 유지
+     * - 그 외 명확 실패/취소    → PattResult.FAIL, pattFail=true, 인보이스=FAILED
+     */
     @Transactional
     public void recordAttempt(Long invoiceId,
                               boolean success,
-                              String failReason,
-                              String respUid,     // provider paymentId / txId 등
-                              String receiptUrl,  // 영수증 URL(명시적 전달 시)
-                              String respJson) {  // 게이트웨이 원문 JSON
+                              String failReason,   // "ACCEPTED","PENDING","FAILED" 등
+                              String respUid,      // provider paymentId / txId 등
+                              String receiptUrl,   // 영수증 URL(명시적 전달 시)
+                              String respJson) {   // 게이트웨이 원문 JSON
         if (log.isDebugEnabled()) {
             String preview = (respJson == null) ? "null"
                     : (respJson.length() > 300 ? respJson.substring(0, 300) + "...(truncated)" : respJson);
@@ -52,14 +59,29 @@ public class PlanBillingService {
         PlanInvoiceEntity inv = invoiceRepo.findById(invoiceId)
                 .orElseThrow(() -> new IllegalArgumentException("INVOICE_NOT_FOUND:" + invoiceId));
 
-        // 2) Attempt 저장 (영수증 URL은 respUid 기준으로 정확 추출)
+        // 2) Attempt 저장 (ACCEPTED/PENDING은 '보류'로 기록: enum은 FAIL이지만 pattFail=false)
         String resolvedReceipt = resolveReceiptUrl(receiptUrl, respJson, respUid);
+
+        final String reasonUC = (failReason == null ? "" : failReason).toUpperCase(Locale.ROOT).trim();
+        // ✅ 대기(보류)로 볼 상태 확장
+        final boolean isPendingLike =
+                "ACCEPTED".equals(reasonUC) ||
+                "PENDING".equals(reasonUC)  ||
+                "READY".equals(reasonUC)    ||
+                "NOT_FOUND".equals(reasonUC)||
+                reasonUC.startsWith("LOOKUP:PENDING") ||
+                reasonUC.startsWith("LOOKUP:NOT_FOUND");
+
+        // 저장 로직은 동일 (성공이면 SUCCESS, 아니면 FAIL이지만 보류 시 pattFail=null)
+        final PattResult pattResult = success ? PattResult.SUCCESS : PattResult.FAIL;
+        final String    pattFailStr = success ? null : (isPendingLike ? null : reasonUC);
+
         PlanAttemptEntity att = PlanAttemptEntity.builder()
                 .invoice(inv)
-                .pattResult(success ? PattResult.SUCCESS : PattResult.FAIL)
-                .pattFail(success ? null : failReason)
+                .pattResult(pattResult)
+                .pattFail(pattFailStr)   // 엔티티가 String(또는 Boolean)이라면 기존 타입에 맞춰 사용하세요
                 .pattUid(respUid)
-                .pattUrl(resolvedReceipt)
+                .pattUrl(StringUtils.hasText(resolvedReceipt) ? resolvedReceipt : null)
                 .pattResponse(respJson)
                 .build();
         attemptRepo.save(att);
@@ -73,15 +95,14 @@ public class PlanBillingService {
             inv.setPiStat(PiStatus.PAID);
             inv.setPiPaid(LocalDateTime.now());
         } else {
-            String reason = (failReason == null ? "" : failReason).toUpperCase(Locale.ROOT).trim();
-            // confirm 단계에서의 ACCEPTED/PENDING은 상태 전이 금지(PENDING 유지)
-            if (reason.startsWith("LOOKUP:FAILED") || reason.startsWith("LOOKUP:CANCELED") || reason.startsWith("LOOKUP:CANCELLED")) {
+            if (reasonUC.startsWith("LOOKUP:FAILED") || reasonUC.startsWith("LOOKUP:CANCELED") || reasonUC.startsWith("LOOKUP:CANCELLED")
+                    || "FAILED".equals(reasonUC) || "CANCELED".equals(reasonUC) || "CANCELLED".equals(reasonUC)) {
                 inv.setPiStat(PiStatus.FAILED);
+            } else if (isPendingLike) {
+                inv.setPiStat(PiStatus.PENDING); // ✅ 보류 유지
             } else {
-                // 최초 상태가 없거나 FAILED였다면 PENDING으로 올려 둔다
-                if (inv.getPiStat() == null || inv.getPiStat() == PiStatus.FAILED) {
-                    inv.setPiStat(PiStatus.PENDING);
-                }
+                // 그 외 모호하면 기존 상태 없을 때만 PENDING으로
+                if (inv.getPiStat() == null) inv.setPiStat(PiStatus.PENDING);
             }
         }
         invoiceRepo.save(inv);
@@ -100,11 +121,9 @@ public class PlanBillingService {
 
                 // 게이트웨이 응답에서 billingKey 추출
                 String usedBillingKey = extractBillingKey(respJson);
-                if (log.isDebugEnabled()) {
-                    log.debug("[recordAttempt] used billingKey from gateway = {}", usedBillingKey);
-                }
+                if (log.isDebugEnabled()) log.debug("[recordAttempt] used billingKey from gateway = {}", usedBillingKey);
 
-                // 🔒 응답 billingKey와 인보이스에 묶인 결제수단의 key가 다르면 업데이트 금지
+                // 응답 billingKey와 인보이스 결제수단의 key가 다르면 업데이트 금지
                 if (StringUtils.hasText(usedBillingKey) &&
                         StringUtils.hasText(targetPayment.getPayKey()) &&
                         !usedBillingKey.equals(targetPayment.getPayKey())) {
@@ -181,14 +200,12 @@ public class PlanBillingService {
     }
 
     // ===== helpers =====
-    /** respUid 기준으로 가장 그럴듯한 위치에서 영수증 URL 추출 */
     private String resolveReceiptUrl(String explicitReceipt, String rawJson, String targetId) {
         if (StringUtils.hasText(explicitReceipt)) return explicitReceipt;
         if (!StringUtils.hasText(rawJson)) return null;
         try {
             JsonNode root = OM.readTree(rawJson);
 
-            // 우선 최상위 후보
             String v = firstNonBlank(
                     get(root, "receiptUrl"),
                     get(root, "receipt", "url"),
@@ -200,7 +217,6 @@ public class PlanBillingService {
             );
             if (StringUtils.hasText(v)) return v;
 
-            // targetId가 일치하는 노드에서 재탐색
             JsonNode node = findPaymentNode(root, targetId);
             return firstNonBlank(
                     get(node, "receiptUrl"),
@@ -219,14 +235,12 @@ public class PlanBillingService {
         if (root == null || root.isMissingNode()) return OM.createObjectNode();
         if (!StringUtils.hasText(targetId)) return firstPaymentNode(root);
 
-        // 단일
         if (!root.isArray() && !root.has("items") && !root.has("content")) {
             if (matches(root, targetId)) return root;
             JsonNode p = root.path("payment");
             if (!p.isMissingNode() && matches(p, targetId)) return root;
         }
 
-        // 배열
         if (root.isArray()) {
             for (JsonNode n : root) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
         }
@@ -264,7 +278,7 @@ public class PlanBillingService {
         try {
             JsonNode root = OM.readTree(raw);
             if (root.has("items") && root.get("items").isArray() && root.get("items").size() > 0) {
-                String v = n(root.get("items").get(0).path("billingKey").asText(null));
+                String v = n(root.get(0).path("billingKey").asText(null));
                 if (StringUtils.hasText(v)) return v;
             }
             String v2 = n(root.path("payment").path("billingKey").asText(null));
