@@ -35,8 +35,6 @@ public class MemberController {
     }
 
     // 프론트 규약: /member/loginForm  (JSON)
-    // 추후 호환 위해 /login 도 함께 허용하고 싶으면 아래처럼 배열로 추가 가능
-    // @PostMapping(value = {"/loginForm", "/login"}, ...)
     @PostMapping(
             value = "/loginForm",
             consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -59,8 +57,6 @@ public class MemberController {
         return ResponseEntity.ok(Map.of("message", "logout ok"));
     }
     
- 
-    
     //회원정보 수정
     @PutMapping("/updateProfile")
     public ResponseEntity<?> updateProfile(@RequestBody MemberDTO dto, HttpSession session) {
@@ -72,7 +68,7 @@ public class MemberController {
         return ResponseEntity.ok().build();
     }
 
- // 비밀번호 변경
+    // 비밀번호 변경
     @PutMapping("/changePw")
     public ResponseEntity<?> changePw(@RequestBody ChangePwDTO dto, HttpSession session) {
         String sid = (String) session.getAttribute("sid");
@@ -97,12 +93,11 @@ public class MemberController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "unauthenticated"));
         }
-        MemberDTO dto = memberService.findByMid(sid); // 아래 서비스 메서드 추가
+        MemberDTO dto = memberService.findByMid(sid); // ✅ ACTIVE만 조회
         return ResponseEntity.ok(dto);
     }
 
-    
- // 이름+전화번호로 아이디 찾기
+    // 이름+전화번호로 아이디 찾기
     @GetMapping("/findIdByTel")
     public ResponseEntity<?> findIdByNameAndTel(
         @RequestParam("mname") String mname,
@@ -122,7 +117,7 @@ public class MemberController {
         return ResponseEntity.ok(Map.of("mid", mid));
     }
     
- // 이메일로 비밀번호 변경 인증 (단순 인증, 비밀번호 변경은 별도 엔드포인트에서)
+    // 이메일로 비밀번호 변경 인증 (단순 인증, 비밀번호 변경은 별도 엔드포인트에서)
     @PostMapping("/findPwByMemail")
     public ResponseEntity<?> verifyPwByMemail(@RequestBody Map<String, String> body) {
         String mid = body.get("mid");
@@ -158,4 +153,20 @@ public class MemberController {
         memberService.changePwDirect(dto.getMid(), dto.getNewPw());
         return ResponseEntity.ok(Map.of("message", "비밀번호가 성공적으로 변경되었습니다."));
     } 
+
+    // ✅ (신규) 회원 탈퇴 — PII 마스킹 + 상태 전환 + 세션 종료
+    @DeleteMapping(value="/delete", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> deleteAccount(@RequestBody(required=false) Map<String, String> body,
+                                           HttpSession session) {
+        String sid = (String) session.getAttribute("sid");
+        if (sid == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "unauthenticated"));
+        }
+        String password = body != null ? body.get("password") : null;
+        String reason   = body != null ? body.get("reason")   : null;
+
+        memberService.deleteAccount(sid, password, reason); // 실패 시 예외
+        session.invalidate(); // 탈퇴 직후 세션 만료
+        return ResponseEntity.ok(Map.of("message", "회원 탈퇴가 완료되었습니다."));
+    }
 }

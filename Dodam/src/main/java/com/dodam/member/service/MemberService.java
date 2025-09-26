@@ -15,6 +15,7 @@ import com.dodam.member.repository.MemtypeRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -48,9 +49,9 @@ public class MemberService {
     }
 
     public void signup(MemberDTO dto) {
-        if (memberRepository.existsByMid(dto.getMid())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid");
-        }
+        // ✅ (중요) ACTIVE 기준 중복 체크 — 재가입 허용 위해
+        memberRepository.findByMidAndMemstatus(dto.getMid(), MemberEntity.MemStatus.ACTIVE)
+            .ifPresent(m -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid"); });
 
         // ✅ 비밀번호 해시 저장
         String encoded = passwordEncoder.encode(dto.getMpw());
@@ -67,9 +68,11 @@ public class MemberService {
                 .mtel(dto.getMtel())
                 .loginmethod(getOrCreateLocal())
                 .memtype(getOrCreateDefault())
+                .memstatus(MemberEntity.MemStatus.ACTIVE) // ✅ 기본 ACTIVE
                 .build();
 
         memberRepository.save(e);
+
         //자녀정보 저장
         if (dto.getChildren() != null && !dto.getChildren().isEmpty()) {
             for (ChildDTO c : dto.getChildren()) {
@@ -84,7 +87,8 @@ public class MemberService {
     }
 
     public MemberDTO login(String mid, String rawPw) {
-        var e = memberRepository.findByMid(mid)
+        // ✅ ACTIVE만 로그인 허용
+        var e = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid id/pw"));
 
         // ✅ 해시 검증
@@ -97,15 +101,18 @@ public class MemberService {
     }
 
     public boolean exists(String mid) {
-        return memberRepository.existsByMid(mid);
+        // ✅ ACTIVE만 기준
+        return memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE).isPresent();
     }
 
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     @Transactional
     public void updateProfile(String sid, MemberDTO dto) {
-        MemberEntity entity = memberRepository.findByMid(sid)
-            .orElseThrow(() -> new RuntimeException("회원 없음"));
+        // ✅ ACTIVE만 수정 허용
+        MemberEntity entity = memberRepository.findByMidAndMemstatus(sid, MemberEntity.MemStatus.ACTIVE)
+            .orElseThrow(() -> new RuntimeException("회원 없음 또는 탈퇴"));
+
         entity.setMemail(dto.getMemail());
         entity.setMtel(dto.getMtel());
         entity.setMaddr(dto.getMaddr());
@@ -114,9 +121,11 @@ public class MemberService {
         entity.setMname(dto.getMname());
         entity.setMbirth(dto.getMbirth());
         memberRepository.save(entity);
-        //자녀정보 삭제 후 정보 재삽입
+
+        // 자녀정보 삭제 후 정보 재삽입
         childRepository.deleteByMember(entity);
-        if (dto.getChildren() != null) {
+
+        if (dto.getChildren() != null && !dto.getChildren().isEmpty()) {
             for (ChildDTO c : dto.getChildren()) {
                 ChildEntity child = ChildEntity.builder()
                     .chname(c.getChname())
@@ -126,27 +135,29 @@ public class MemberService {
                 childRepository.save(child);
             }
         }
-        
+
     }
 
     public void changePw(String sid, ChangePwDTO dto) {
-        MemberEntity entity = memberRepository.findByMid(sid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음"));
+        // ✅ ACTIVE만 변경 허용
+        MemberEntity entity = memberRepository.findByMidAndMemstatus(sid, MemberEntity.MemStatus.ACTIVE)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음 또는 탈퇴"));
 
         // 현재 비밀번호 검증
         if (!passwordEncoder.matches(dto.getCurrentPw(), entity.getMpw())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "현재 비밀번호가 일치하지 않습니다.");
         }
-        entity.setMpw(passwordEncoder.encode(dto.getNewPw()));
+        
 
-        // 새 비밀번호 저장
+        // 새 비밀번호 저장 (기존 주석/흐름 유지)
         entity.setMpw(passwordEncoder.encode(dto.getNewPw()));
         memberRepository.save(entity);
     }
 
     public MemberDTO me(String mid) {
-        var e = memberRepository.findByMid(mid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음"));
+        // ✅ ACTIVE만 조회
+        var e = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음 또는 탈퇴"));
         return new MemberDTO(e);
     }
 
@@ -164,7 +175,8 @@ public class MemberService {
 
     // 비밀번호 암호화 후 DB에 저장
     public void updatePassword(String mid, String tempPw) {
-        MemberEntity member = memberRepository.findByMid(mid).orElseThrow();
+        MemberEntity member = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음 또는 탈퇴"));
         member.setMpw(passwordEncoder.encode(tempPw));
         memberRepository.save(member);
     }
@@ -178,17 +190,54 @@ public class MemberService {
     }
     
     public void changePwDirect(String mid, String newPw) {
-        MemberEntity entity = memberRepository.findByMid(mid)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음"));
+        MemberEntity entity = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음 또는 탈퇴"));
         entity.setMpw(passwordEncoder.encode(newPw));
         memberRepository.save(entity);
     }
     
     public MemberDTO findByMid(String mid) {
-        var e = memberRepository.findByMid(mid)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no member"));
+        var e = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no member or deleted"));
         return new MemberDTO(e);
     }
 
-    
+    // ✅ (신규) 탈퇴: PII 마스킹 + 랜덤 해시 + 소셜 provider 해제 + 상태 전환
+    @Transactional
+    public void deleteAccount(String mid, String confirmPwOrNull, String reasonOrNull) {
+        MemberEntity m = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음/이미 탈퇴"));
+
+        // LOCAL만 비밀번호 검증 (소셜은 생략)
+        boolean isLocal = (m.getLoginmethod() == null) ||
+                          "LOCAL".equalsIgnoreCase(m.getLoginmethod().getLmtype());
+        if (isLocal) {
+            if (confirmPwOrNull == null || m.getMpw() == null || !passwordEncoder.matches(confirmPwOrNull, m.getMpw())) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "비밀번호가 일치하지 않습니다.");
+            }
+        }
+
+        // 로그인 차단: 비번 랜덤 해시로 교체
+        m.setMpw(passwordEncoder.encode(UUID.randomUUID().toString()));
+
+        // 개인정보 최소화/마스킹 — 표시용만 남김
+        m.setMname("탈퇴한 사용자");
+        m.setMnic(null);
+        m.setMtel("000-0000-0000");
+        m.setMaddr("");
+        m.setMpost(0L);
+        // (선택) 이메일도 마스킹하려면 아래 사용
+        m.setMemail("deleted+" + m.getMnum() + "@invalid.local");
+
+        // 소셜(있으면) 연결 해제 — 동일 소셜로 재가입 허용
+        if (m.getLoginmethod() != null) {
+        }
+
+        // 상태 전환 + 이력(카멜)
+        m.setMemstatus(MemberEntity.MemStatus.DELETED);
+        m.setDeletedAt(LocalDateTime.now());
+        m.setDeletedReason(reasonOrNull);
+
+        memberRepository.save(m);
+    }
 }

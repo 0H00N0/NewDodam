@@ -12,6 +12,9 @@ import lombok.*;
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class MemberEntity {
 
+    // ✅ 회원 상태 (ACTIVE/DELETED) — 재가입 허용/표시 제어용
+    public enum MemStatus { ACTIVE, DELETED }
+
     @Id
     @Column(name = "mnum")
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,29 +30,62 @@ public class MemberEntity {
     @JoinColumn(name = "mtnum", referencedColumnName = "mtnum", nullable = false)
     private MemtypeEntity memtype;
 
-    @Column(name = "mid",   nullable = false, length = 100 , unique = true)  private String mid;    // ID
-    @Column(name = "mpw",   nullable = false, length = 255)  private String mpw;    // (개발용)평문 또는 BCrypt
-    @Column(name = "mname", nullable = false, length = 100)  private String mname;  // 이름
-    @Column(name = "memail", length = 255)                   private String memail; // 이메일 (NULL 가능)
-    @Column(name = "mtel",  nullable = false, length = 30)   private String mtel;   // 전화
-    @Column(name = "maddr", nullable = false, length = 255)  private String maddr;  // 상세주소
-    @Column(name = "mpost", nullable = false)                private Long mpost;    // 우편번호
-    @Column(name = "mbirth", nullable = true)            	 private LocalDate mbirth; // 생일
-    @Column(name = "mreg", nullable = true)					 private LocalDate mreg; // 구독시작일
-    @Column(name = "mnic",   length = 100)                   private String mnic;   // 닉네임 (NULL)
+    @Column(name = "mid",   nullable = false, length = 100 /* , unique = true 제거: 활성만 유니크는 DB 인덱스로 */)
+    private String mid;    // ID
 
-    @Column(name = "created_at", nullable = false) private LocalDateTime createdAt;
-    @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt;
+    @Column(name = "mpw",   nullable = false, length = 255)
+    private String mpw;    // (개발용)평문 또는 BCrypt
+
+    @Column(name = "mname", nullable = false, length = 100)
+    private String mname;  // 이름
+
+    @Column(name = "memail", length = 255)
+    private String memail; // 이메일 (NULL 가능)
+
+    @Column(name = "mtel",  nullable = false, length = 30)
+    private String mtel;   // 전화
+
+    @Column(name = "maddr", nullable = false, length = 255)
+    private String maddr;  // 상세주소
+
+    @Column(name = "mpost", nullable = false)
+    private Long mpost;    // 우편번호
+
+    @Column(name = "mbirth", nullable = true)
+    private LocalDate mbirth; // 생일
+
+    @Column(name = "mreg", nullable = true)
+    private LocalDate mreg; // 구독시작일
+
+    @Column(name = "mnic",   length = 100)
+    private String mnic;   // 닉네임 (NULL)
+
+    // ✅ 상태/이력(카멜 케이스 컬럼명으로 통일)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "memstatus", nullable = false, length = 20)
+    private MemStatus memstatus = MemStatus.ACTIVE; // 기본 ACTIVE
+
+    @Column(name = "deletedAt")
+    private LocalDateTime deletedAt; // 탈퇴시각
+
+    @Column(name = "deletedReason", length = 200)
+    private String deletedReason; // 탈퇴사유(선택)
+
+    @Column(name = "createdAt", nullable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updatedAt", nullable = false)
+    private LocalDateTime updatedAt;
 
     @PrePersist
     void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = this.createdAt;
     }
-    
+
     @PreUpdate
     void onUpdate() { this.updatedAt = LocalDateTime.now(); }
-    
+
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL)
     private List<ChildEntity> children;
 }
