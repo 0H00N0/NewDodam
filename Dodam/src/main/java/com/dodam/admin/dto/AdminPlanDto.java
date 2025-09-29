@@ -8,7 +8,9 @@ import com.dodam.plan.Entity.PlanTermsEntity;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal; // BigDecimal import 추가
 import java.time.LocalDateTime;
@@ -118,4 +120,16 @@ public class AdminPlanDto {
         private List<PlanBenefitDto> benefits; // ▼ 혜택 리스트 필드 추가
     }
     // =================== ▲ 수정된 부분 끝 ▲ ===================
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public class AdminPlanDetailDto {
+        private Long planId;
+        private String planName;
+        private String planCode;
+        private int price;
+        private String term;     // 1개월, 3개월, 12개월 등
+        private List<String> benefits; // 혜택 리스트
+    }
 }
