@@ -235,6 +235,7 @@ public class MemberService {
         m.setDeletedReason(
             (reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null
         );
+        
 
         memberRepository.save(m);
     }
