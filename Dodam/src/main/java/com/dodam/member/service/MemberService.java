@@ -219,14 +219,17 @@ public class MemberService {
         // 로그인 차단
         m.setMpw(passwordEncoder.encode(UUID.randomUUID().toString()));
 
-        // ✅ 길이/UNIQUE 모두 안전한 마스킹
+        // ✅ 안전 마스킹 (길이/UNIQUE/Oracle "" 주의)
         String suf36 = Long.toString(m.getMnum(), 36);
         int last3 = (int)(m.getMnum() % 1000);
 
+        // 👇 방식 A: mid도 유일하게 변경 (UNIQUE 잠금 해제)
+        m.setMid("deleted_" + suf36);
+
         m.setMname("탈퇴한 사용자");
-        m.setMnic("deleted-" + suf36);                   // 절대 null 금지 (NOT NULL 대비)
-        m.setMtel(String.format("000-0000-%03d", last3)); // 항상 13자 → 길이 초과/중복 방지
-        m.setMaddr("-");
+        m.setMnic("d-" + suf36);
+        m.setMtel(String.format("000-0000-%03d", last3)); // 13자 고정
+        m.setMaddr("-");                                  // "" 금지(Oracle)
         m.setMpost(0L);
         m.setMemail("deleted+" + suf36 + "@invalid.local");
 
