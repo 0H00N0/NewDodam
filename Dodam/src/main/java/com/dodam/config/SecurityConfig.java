@@ -54,6 +54,7 @@ public class SecurityConfig {
                 "/events/**",
                 "/admin/**",
                 "/board/**",
+                "/api/boards/**",
                 "/pg/**"
             ))
             // 인가
@@ -84,6 +85,7 @@ public class SecurityConfig {
                 .requestMatchers("/admin/**").permitAll()
                 .requestMatchers("/events/**").permitAll()
                 .requestMatchers("/board/**").permitAll()
+                .requestMatchers("/api/boards/**").permitAll()
                 .anyRequest().permitAll()
             )
             // 세션 기반
@@ -104,7 +106,7 @@ public class SecurityConfig {
         ));
         c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
-        // 필요시 노출헤더: c.setExposedHeaders(List.of("Set-Cookie"));
+        c.setExposedHeaders(List.of("Authorization", "Set-Cookie")); // 필요시 노출헤더;
 
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);

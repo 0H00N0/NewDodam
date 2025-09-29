@@ -5,30 +5,30 @@ import lombok.*;
 
 @Entity
 @Table(name = "events",
-       indexes = { @Index(name="idx_events_board_code", columnList="board_code"),
-                   @Index(name="idx_events_active",     columnList="is_active") })
+       indexes = { @Index(name="idx_events_board_code", columnList="boardcode"),
+                   @Index(name="idx_events_active",     columnList="isactive") })
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class EventEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "board_code", nullable = false)
+    @JoinColumn(name = "boardcode", nullable = false)
     private BoardEntity board;
     @Column(nullable = false, length = 200)
     private String title;
     @Lob @Column(nullable = false)
     private String content;
-    @Column(name="start_date", nullable = false)
+    @Column(name="startdate", nullable = false)
     private java.time.LocalDate startDate;
-    @Column(name="end_date", nullable = false)
+    @Column(name="enddate", nullable = false)
     private java.time.LocalDate endDate;
-    @Column(name="banner_url", length = 255)
+    @Column(name="bannerurl", length = 255)
     private String bannerUrl;
-    @Column(name="is_active", nullable = false)
+    @Column(name="isactive", nullable = false)
     private boolean active = true;
     @Column(nullable = false)
     private int views = 0;
-    @Column(name="created_at", nullable = false, updatable = false)
+    @Column(name="createdat", nullable = false, updatable = false)
     private java.time.LocalDateTime createdAt = java.time.LocalDateTime.now();
     @Column(name="updated_at")
     private java.time.LocalDateTime updatedAt;

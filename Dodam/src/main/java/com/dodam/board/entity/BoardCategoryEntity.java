@@ -4,29 +4,67 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import java.time.LocalDateTime;
 
-import java.util.ArrayList;
-import java.util.List;
+import com.dodam.board.entity.BoardCategoryEntity;
+import com.dodam.board.entity.BoardStateEntity;
 
 @Entity
 @Getter
 @Setter
-@NoArgsConstructor
-@Table(name = "BoardCategory") // 'BoardCategory' 테이블과 매핑
-public class BoardCategoryEntity {
+@NoArgsConstructor // JPA는 기본 생성자가 필요합니다.
+@Table(name = "Board") // 데이터베이스의 'Board' 테이블과 매핑
+public class BoardEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "bcnum")
-    private Long bcnum; // 카테고리 번호 (Primary Key)
+    @Column(name = "bnum")
+    private Long bnum; // 글번호 (Primary Key)
 
-    @Column(name = "bcname", length = 255)
-    private String bcname; // 카테고리 내용
+    @Column(name = "mnum", nullable = false)
+    private Long mnum; // 회원번호
 
-    // --- 관계 매핑 (양방향) ---
+    @Column(name = "tnum")
+    private Long tnum; // 타입번호
+
+    @Column(name = "btitle", length = 255)
+    private String btitle; // 제목
+
+    @Lob // 내용처럼 긴 텍스트는 @Lob으로 매핑합니다.
+    @Column(name = "bcontent")
+    private String bcontent; // 내용
+
+    @CreationTimestamp // 엔티티 생성 시 자동으로 현재 시간이 기록됩니다.
+    @Column(name = "bdate")
+    private LocalDateTime bdate; // 작성일
+
+    @UpdateTimestamp // 엔티티 수정 시 자동으로 현재 시간이 기록됩니다.
+    @Column(name = "bedate")
+    private LocalDateTime bedate; // 수정일
     
-    // BoardCategory(1) : Board(N) -> 일대다 관계
-    // 'mappedBy'는 BoardEntity에 있는 'boardCategory' 필드를 가리킵니다.
-    @OneToMany(mappedBy = "boardCategory", cascade = CascadeType.ALL)
-    private List<BoardEntity> boards = new ArrayList<>();
+    @Column(name = "mid", nullable = false)
+    private String mid; // 회원ID
+
+    @Column(name = "mnic", nullable = false)
+    private String mnic; // 회원닉네임
+	
+    @Column(name = "boardcode")
+    private String code;
+    // --- 관계 매핑 ---
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "boardid", nullable = false)  // ← referencedColumnName 제거!
+    private BoardEntity board;
+    
+    // Board(N) : BoardCategory(1) -> 다대일 관계
+    @ManyToOne(fetch = FetchType.LAZY) // 지연 로딩으로 성능 최적화
+    @JoinColumn(name = "bcnum") // 외래 키(FK) 컬럼 지정
+    private BoardCategoryEntity boardCategory;
+
+    // Board(N)    : BoardState(1) -> 다대일 관계
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bsnum") // 외래 키(FK) 컬럼 지정
+    private BoardStateEntity boardState;
+    
 }
