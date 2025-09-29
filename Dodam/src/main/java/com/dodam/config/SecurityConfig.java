@@ -44,6 +44,7 @@ public class SecurityConfig {
                 "/member/changePw",
                 "/member/changePwDirect",
                 "/member/signup",
+                "/member/delete",
                 "/webhooks/pg",
                 // ✅ 결제/구독/빌링키 전부 예외 처리
                 "/payments/**",

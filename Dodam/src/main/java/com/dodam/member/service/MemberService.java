@@ -208,7 +208,6 @@ public class MemberService {
         MemberEntity m = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음/이미 탈퇴"));
 
-        // LOCAL만 비밀번호 검증 (소셜은 생략)
         boolean isLocal = (m.getLoginmethod() == null) ||
                           "LOCAL".equalsIgnoreCase(m.getLoginmethod().getLmtype());
         if (isLocal) {
@@ -217,26 +216,25 @@ public class MemberService {
             }
         }
 
-        // 로그인 차단: 비번 랜덤 해시로 교체
+        // 로그인 차단
         m.setMpw(passwordEncoder.encode(UUID.randomUUID().toString()));
 
-        // 개인정보 최소화/마스킹 — 표시용만 남김
+        // ✅ PK(mnum)로 유니크 보장되는 마스킹(UNIQUE 제약 충돌 방지)
+        String suf = String.valueOf(m.getMnum());
         m.setMname("탈퇴한 사용자");
-        m.setMnic(null);
-        m.setMtel("000-0000-0000");
+        m.setMnic("deleted-" + suf);                 // 닉네임 UNIQUE면 충돌 방지
+        m.setMtel("000-0000-" + suf);                // 전화번호 UNIQUE면 충돌 방지
         m.setMaddr("");
         m.setMpost(0L);
-        // (선택) 이메일도 마스킹하려면 아래 사용
-        m.setMemail("deleted+" + m.getMnum() + "@invalid.local");
+        m.setMemail("deleted+" + suf + "@invalid.local"); // 이메일 UNIQUE면 충돌 방지
 
-        // 소셜(있으면) 연결 해제 — 동일 소셜로 재가입 허용
-        if (m.getLoginmethod() != null) {
-        }
+        // 소셜 연결 해제 필요 시 추가 로직 위치
 
-        // 상태 전환 + 이력(카멜)
         m.setMemstatus(MemberEntity.MemStatus.DELETED);
         m.setDeletedAt(LocalDateTime.now());
-        m.setDeletedReason(reasonOrNull);
+        m.setDeletedReason(
+            (reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null
+        );
 
         memberRepository.save(m);
     }
