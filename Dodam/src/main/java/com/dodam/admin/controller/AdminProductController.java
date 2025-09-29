@@ -23,36 +23,37 @@ public class AdminProductController {
     private final AdminProductService adminProductService;
 
     /**
-     * 관리자 상품 등록 API
-     * @param requestDTO 상품 정보와 이미지 정보를 담은 DTO
-     * @return 생성된 상품의 ID
+     * ✅ 단일 상품 등록
+     * - DTO 안에서 바로 이미지 URL을 받아 DB에 저장
      */
     @PostMapping
     public ResponseEntity<?> registerProduct(@Valid @RequestBody AdminProductRequestDTO requestDTO) {
         ProductEntity createdProduct = adminProductService.createProduct(requestDTO);
-        // 성공적으로 생성되었음을 알리는 201 Created 상태 코드와 함께,
-        // 생성된 상품의 고유 ID(pronum)를 응답 body에 담아 반환합니다.
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(Map.of("pronum", createdProduct.getPronum()));
     }
+
+    /**
+     * ✅ 전체 상품 조회
+     */
     @GetMapping
     public ResponseEntity<List<ProductListResponseDTO>> getAllProducts() {
         List<ProductListResponseDTO> products = adminProductService.findAllProducts();
         return ResponseEntity.ok(products);
     }
-    // READ (Single): 특정 상품 상세 조회
+
+    /**
+     * ✅ 단일 상품 상세 조회
+     */
     @GetMapping("/{productId}")
     public ResponseEntity<ProductDetailResponseDTO> getProductById(@PathVariable("productId") Long productId) {
         ProductDetailResponseDTO product = adminProductService.findProductById(productId);
         return ResponseEntity.ok(product);
     }
-    // ⬆️ ====================================== ⬆️
+
     /**
-     * 관리자 상품 수정 API
-     * @param productId 수정할 상품의 ID
-     * @param requestDTO 수정할 상품 정보 DTO
-     * @return 수정된 상품 상세 정보
+     * ✅ 단일 상품 수정
      */
     @PutMapping("/{productId}")
     public ResponseEntity<ProductDetailResponseDTO> updateProduct(
@@ -62,32 +63,25 @@ public class AdminProductController {
         ProductDetailResponseDTO updatedProduct = adminProductService.updateProduct(productId, requestDTO);
         return ResponseEntity.ok(updatedProduct);
     }
+
     /**
-     * 관리자 상품 삭제 API
-     * @param productId 삭제할 상품의 ID
-     * @return 성공 시 204 No Content
+     * ✅ 단일 상품 삭제
      */
     @DeleteMapping("/{productId}")
     public ResponseEntity<Void> deleteProduct(@PathVariable("productId") Long productId) {
         adminProductService.deleteProduct(productId);
-        // 성공적으로 삭제되었으며, 별도의 본문(body)이 없음을 의미하는 204 No Content 상태를 반환합니다.
         return ResponseEntity.noContent().build();
     }
-    /**
-     * ✅ 상품 일괄등록 API
-     * - CSV 파일과 이미지 파일들을 함께 업로드
-     * - CSV에는 상품 정보 + 이미지 파일명을 기록
-     */
+
     @PostMapping("/bulk-upload")
-    public ResponseEntity<?> bulkUploadProducts(
-            @RequestParam("file") MultipartFile csvFile,
-            @RequestParam("images") MultipartFile[] images) {
+    public ResponseEntity<?> bulkUploadProducts(@RequestParam("file") MultipartFile csvFile) {
         try {
-            int count = adminProductService.bulkRegister(csvFile, images);
+            int count = adminProductService.bulkRegister(csvFile);
             return ResponseEntity.ok(Map.of("registeredCount", count));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body("일괄등록 실패: " + e.getMessage());
         }
     }
+
 }

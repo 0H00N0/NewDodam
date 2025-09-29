@@ -17,8 +17,7 @@ public class ProductDetailResponseDTO { //상품 상세 조회 dto
     private Long pronum;
     private String proname;
     private String prodetail;
-    private BigDecimal proprice;
-    private BigDecimal proborrow;
+    private BigDecimal proborrow;   // ✅ 대여 가격만 유지
     private String probrand;
     private String promade;
     private Integer proage;
@@ -40,8 +39,7 @@ public class ProductDetailResponseDTO { //상품 상세 조회 dto
         this.pronum = product.getPronum();
         this.proname = product.getProname();
         this.prodetail = product.getProdetail();
-        this.proprice = product.getProprice();
-        this.proborrow = product.getProborrow();
+        this.proborrow = product.getProborrow();  // ✅ 여기만 매핑
         this.probrand = product.getProbrand();
         this.promade = product.getPromade();
         this.proage = product.getProage();
