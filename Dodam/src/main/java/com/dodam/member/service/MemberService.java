@@ -219,24 +219,22 @@ public class MemberService {
         // 로그인 차단
         m.setMpw(passwordEncoder.encode(UUID.randomUUID().toString()));
 
-        // ✅ PK(mnum)로 유니크 보장되는 마스킹(UNIQUE 제약 충돌 방지)
-        String suf = String.valueOf(m.getMnum());
-        m.setMname("탈퇴한 사용자");
-        m.setMnic("deleted-" + suf);                 // 닉네임 UNIQUE면 충돌 방지
-        m.setMtel("000-0000-" + suf);                // 전화번호 UNIQUE면 충돌 방지
-        m.setMaddr("");
-        m.setMpost(0L);
-        m.setMemail("deleted+" + suf + "@invalid.local"); // 이메일 UNIQUE면 충돌 방지
+        // ✅ 길이/UNIQUE 모두 안전한 마스킹
+        String suf36 = Long.toString(m.getMnum(), 36);
+        int last3 = (int)(m.getMnum() % 1000);
 
-        // 소셜 연결 해제 필요 시 추가 로직 위치
+        m.setMname("탈퇴한 사용자");
+        m.setMnic("deleted-" + suf36);                   // 절대 null 금지 (NOT NULL 대비)
+        m.setMtel(String.format("000-0000-%03d", last3)); // 항상 13자 → 길이 초과/중복 방지
+        m.setMaddr("-");
+        m.setMpost(0L);
+        m.setMemail("deleted+" + suf36 + "@invalid.local");
 
         m.setMemstatus(MemberEntity.MemStatus.DELETED);
         m.setDeletedAt(LocalDateTime.now());
-        m.setDeletedReason(
-            (reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null
-        );
-        
+        m.setDeletedReason((reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null);
 
         memberRepository.save(m);
     }
+
 }
