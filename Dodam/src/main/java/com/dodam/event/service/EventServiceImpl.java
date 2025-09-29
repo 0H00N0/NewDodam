@@ -65,7 +65,7 @@ public class EventServiceImpl implements EventService {
         }
 
         // ------------------------------
-        // 선착순 이벤트
+        // 선착순 이벤트 
         // ------------------------------
         if ("FIRST".equalsIgnoreCase(event.getEventType())) {
             // 중복참여 방지
@@ -87,7 +87,7 @@ public class EventServiceImpl implements EventService {
             First first = new First();
             first.setEvent(event);
             first.setMember(member);
-            first.setFDate(LocalDateTime.now());
+            first.setFdate(LocalDateTime.now());
             first.setOrderNum((int) (firstRepository.countByEvent(event) + 1)); // 몇 번째 참여인지 기록
             first.setWinState(0);
             firstRepository.save(first);
