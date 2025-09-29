@@ -1,5 +1,6 @@
 package com.dodam.admin.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -34,6 +35,8 @@ public class AdminProductRequestDTO { // 상품 등록/수정 DTO
     private String promade;
     private Integer proage;
     private String procertif;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate prodate;
 
     @NotNull(message = "대여 예약 번호는 필수입니다.")
