@@ -1,6 +1,8 @@
 package com.dodam.admin.dto;
 
 import com.dodam.product.entity.ProductEntity;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import lombok.Getter;
 
 import java.math.BigDecimal;
@@ -15,6 +17,7 @@ public class ProductListResponseDTO {
     private String probrand;
     private String categoryName;
     private String productGrade; // S, A, B, C 등급
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime procre; // 등록일
 
     public ProductListResponseDTO(ProductEntity product) {

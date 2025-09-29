@@ -1,6 +1,8 @@
 package com.dodam.admin.dto;
 
 import com.dodam.product.entity.ProductEntity;
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import lombok.Getter;
 
 import java.math.BigDecimal;
@@ -22,7 +24,9 @@ public class ProductDetailResponseDTO { //상품 상세 조회 dto
     private Integer proage;
     private String procertif;
     private LocalDate prodate;
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime procre;
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime proupdate;
 
     // 연관 정보
