@@ -79,4 +79,11 @@ public interface PlanPriceRepository extends JpaRepository<PlanPriceEntity, Long
     
     @Query("select p.pterm.ptermId from PlanPriceEntity p where p.ppriceId = :priceId")
     Long findTermIdByPriceId(@Param("priceId") Long priceId);
+    
+ // PlanPriceRepository
+    List<PlanPriceEntity> findByPlan_PlanId(Long planId);
+   
+ // ✅ 삭제 메서드 추가
+    void deleteByPlan_PlanId(Long planId);
+
 }
