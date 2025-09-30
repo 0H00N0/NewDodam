@@ -50,4 +50,9 @@ public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, 
 	Optional<PlanInvoiceEntity> findRecentPendingSameAmount(@Param("mid") String mid,
 			@Param("status") PlanEnums.PiStatus status, @Param("amount") BigDecimal amount,
 			@Param("currency") String currency, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+	/**
+	 * 회원의 모든 인보이스 조회
+	 */
+	List<PlanInvoiceEntity> findAllByPlanMember_Member_Mnum(Long mnum);
+	
 }

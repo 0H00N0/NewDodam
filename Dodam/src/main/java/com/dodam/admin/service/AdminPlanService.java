@@ -187,7 +187,7 @@ public class AdminPlanService {
     // -------------------------------
 
     public List<PlanMember> getMemberSubscriptions(Long memberId) {
-        return planMemberRepository.findByMnum(memberId);
+        return planMemberRepository.findAllByMember_Mnum(memberId);
     }
 
     public PlanMember updateSubscriptionStatus(Long pmId, String status) {
@@ -206,7 +206,7 @@ public class AdminPlanService {
 
     public List<PlanInvoiceEntity> getMemberInvoices(Long memberId) {
         // 연관관계 필드명이 다르면 Repository 메서드명도 맞춰주세요.
-        return planInvoiceRepository.findByPmld_Mnum(memberId);
+        return planInvoiceRepository.findAllByPlanMember_Member_Mnum(memberId);
     }
 
     public PlanInvoiceEntity getInvoiceDetail(Long piId) {
@@ -219,7 +219,7 @@ public class AdminPlanService {
     // -------------------------------
 
     public List<PlanAttemptEntity> getInvoiceAttempts(Long piId) {
-        return planAttemptRepository.findByPild_PiId(piId);
+        return planAttemptRepository.findByInvoice_PiIdOrderByPattIdDesc(piId);
     }
 
     // -------------------------------

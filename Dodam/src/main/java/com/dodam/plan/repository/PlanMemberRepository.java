@@ -57,6 +57,10 @@ public interface PlanMemberRepository extends JpaRepository<PlanMember, Long> {
     """)
     int activateByPmstat(@Param("pmId") Long pmId,
                          @Param("stat") PmStatus stat);
+    /**
+     * MemberEntity.mnum(PK) 기준으로 모든 PlanMember 조회 (전체 이력)
+     */
+    List<PlanMember> findAllByMember_Mnum(Long mnum);
     
 
 }
