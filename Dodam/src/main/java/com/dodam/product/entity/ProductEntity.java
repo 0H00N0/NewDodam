@@ -65,9 +65,6 @@ public class ProductEntity {
     @Column(name = "resernum", nullable = false)
     private Long resernum;
 
-    @Column(name = "ctnum", nullable = false)
-    private Long ctnum;
-    
  // ==== 이미지 양방향 ====
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("proimageorder ASC")
