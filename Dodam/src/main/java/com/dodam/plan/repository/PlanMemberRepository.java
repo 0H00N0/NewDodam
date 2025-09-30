@@ -57,4 +57,6 @@ public interface PlanMemberRepository extends JpaRepository<PlanMember, Long> {
     """)
     int activateByPmstat(@Param("pmId") Long pmId,
                          @Param("stat") PmStatus stat);
+    List<PlanMember> findByMnum(Long memberId);
+
 }

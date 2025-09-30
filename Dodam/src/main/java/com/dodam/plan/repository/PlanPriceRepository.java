@@ -1,6 +1,8 @@
 package com.dodam.plan.repository;
 
 import com.dodam.plan.Entity.PlanPriceEntity;
+import com.dodam.plan.Entity.PlansEntity;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -83,7 +85,10 @@ public interface PlanPriceRepository extends JpaRepository<PlanPriceEntity, Long
  // PlanPriceRepository
     List<PlanPriceEntity> findByPlan_PlanId(Long planId);
    
- // ✅ 삭제 메서드 추가
-    void deleteByPlan_PlanId(Long planId);
+ // 특정 플랜에 속한 가격 정보 전체 조회
+    List<PlanPriceEntity> findByPlan(PlansEntity plan);
+
+    // 특정 플랜의 가격 정보 전체 삭제
+    void deleteByPlan(PlansEntity plan);
 
 }

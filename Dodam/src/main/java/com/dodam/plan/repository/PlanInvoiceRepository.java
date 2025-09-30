@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, Long> {
@@ -49,4 +50,6 @@ public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, 
 	Optional<PlanInvoiceEntity> findRecentPendingSameAmount(@Param("mid") String mid,
 			@Param("status") PlanEnums.PiStatus status, @Param("amount") BigDecimal amount,
 			@Param("currency") String currency, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+	
+	List<PlanInvoiceEntity> findByPmld_Mnum(Long memberId);
 }

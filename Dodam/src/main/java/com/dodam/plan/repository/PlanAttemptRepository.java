@@ -20,4 +20,7 @@ public interface PlanAttemptRepository extends JpaRepository<PlanAttemptEntity, 
              FETCH FIRST 1 ROWS ONLY
             """, nativeQuery = true)
     Optional<String> findLatestPaymentUidByInvoiceId(@Param("invoiceId") Long invoiceId);
+    
+    List<PlanAttemptEntity> findByPild_PiId(Long piId);
+
 }
