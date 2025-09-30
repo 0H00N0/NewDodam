@@ -48,7 +48,6 @@ public class AdminProductService {
         ProductEntity newProduct = ProductEntity.builder()
                 .proname(requestDTO.getProname())
                 .prodetail(requestDTO.getProdetail())
-                .proprice(requestDTO.getProprice())
                 .proborrow(requestDTO.getProborrow())
                 .probrand(requestDTO.getProbrand())
                 .promade(requestDTO.getPromade())
@@ -56,7 +55,6 @@ public class AdminProductService {
                 .procertif(requestDTO.getProcertif())
                 .prodate(requestDTO.getProdate())
                 .resernum(requestDTO.getResernum())
-                .ctnum(requestDTO.getCtnum())
                 .category(category)
                 .prostate(prostate)
                 .images(new ArrayList<>())
@@ -96,7 +94,6 @@ public class AdminProductService {
         // 기본 정보 업데이트
         productToUpdate.setProname(requestDTO.getProname());
         productToUpdate.setProdetail(requestDTO.getProdetail());
-        productToUpdate.setProprice(requestDTO.getProprice());
         productToUpdate.setProborrow(requestDTO.getProborrow());
         productToUpdate.setProbrand(requestDTO.getProbrand());
         productToUpdate.setPromade(requestDTO.getPromade());
@@ -104,7 +101,6 @@ public class AdminProductService {
         productToUpdate.setProcertif(requestDTO.getProcertif());
         productToUpdate.setProdate(requestDTO.getProdate());
         productToUpdate.setResernum(requestDTO.getResernum());
-        productToUpdate.setCtnum(requestDTO.getCtnum());
         productToUpdate.setCategory(category);
         productToUpdate.setProstate(prostate);
 
@@ -150,25 +146,24 @@ public class AdminProductService {
                         .procertif(line[6])                             // 인증
                         .prodate(LocalDate.parse(line[7]))              // 출시일
                         .resernum(Long.parseLong(line[8]))              // 예약번호
-                        .ctnum(Long.parseLong(line[9]))                 // 쿠폰종류
-                        .category(categoryRepository.findById(Long.parseLong(line[10])).orElseThrow()) // 카테고리
-                        .prostate(prostateRepository.findById(Long.parseLong(line[11])).orElseThrow()) // 상태
+                        .category(categoryRepository.findById(Long.parseLong(line[9])).orElseThrow()) // 카테고리
+                        .prostate(prostateRepository.findById(Long.parseLong(line[10])).orElseThrow()) // 상태
                         .images(new ArrayList<>())
                         .build();
 
-                // ✅ 12번째(메인), 13번째(상세) 컬럼에서 이미지 URL 읽기
-                if (line.length > 12 && line[12] != null && !line[12].isBlank()) {
+                // ✅ 11번째(메인), 12번째(상세) 컬럼에서 이미지 URL 읽기
+                if (line.length > 11 && line[11] != null && !line[11].isBlank()) {
                     product.getImages().add(ProductImageEntity.builder()
                             .proimageorder(1)
-                            .prourl(line[12])
+                            .prourl(line[11])
                             .product(product)
                             .category(product.getCategory())
                             .build());
                 }
-                if (line.length > 13 && line[13] != null && !line[13].isBlank()) {
+                if (line.length > 12 && line[12] != null && !line[12].isBlank()) {
                     product.getImages().add(ProductImageEntity.builder()
                             .proimageorder(2)
-                            .prodetailimage(line[13])
+                            .prodetailimage(line[12])
                             .product(product)
                             .category(product.getCategory())
                             .build());

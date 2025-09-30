@@ -42,9 +42,6 @@ public class AdminProductRequestDTO { // 상품 등록/수정 DTO
     @NotNull(message = "대여 예약 번호는 필수입니다.")
     private Long resernum;
 
-    @NotNull(message = "쿠폰 종류는 필수입니다.")
-    private Long ctnum;
-
     @NotNull(message = "카테고리 번호는 필수입니다.")
     private Long catenum;
 
