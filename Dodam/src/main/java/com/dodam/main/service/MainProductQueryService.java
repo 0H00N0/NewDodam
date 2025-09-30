@@ -2,6 +2,7 @@ package com.dodam.main.service;
 
 import com.dodam.main.dto.MainNewProductByNameDTO;
 import com.dodam.main.dto.MainPopularProductByNameDTO;
+import com.dodam.main.dto.MainProductBasicDTO;
 import com.dodam.main.repository.MainProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,30 @@ public class MainProductQueryService {
                 toLong(r[4])     // RENTCOUNT
             ))
             .collect(Collectors.toList());
+    }
+
+    /** ✅ 단건 상세 (히어로 onPrimary로 상세 이동 시 사용) */
+    public MainProductBasicDTO getProductBasic(Long proId) {
+        Object[] r = repo.findProductBasicById(proId);
+        if (r == null) {
+            throw new IllegalArgumentException("Product not found: " + proId);
+        }
+        return new MainProductBasicDTO(
+            toLong(r[0]),        // PROID
+            (String) r[1],       // NAME
+            toLong(r[2]),        // PRICE
+            (String) r[3],       // PROCRE
+            (String) r[4]        // IMAGE_URL
+        );
+    }
+    
+    /** ✅ 해당 상품 이미지 URL 리스트 */
+    public List<String> getProductImageUrls(Long proId, Integer limit) {
+        if (proId == null) return List.of();
+        if (limit == null || limit <= 0) {
+            return repo.findAllImageUrlsByProId(proId);
+        }
+        return repo.findImageUrlsByProIdLimited(proId, limit);
     }
 
     private Long toLong(Object o) {

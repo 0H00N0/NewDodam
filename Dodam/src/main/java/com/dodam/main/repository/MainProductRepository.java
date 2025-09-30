@@ -12,10 +12,6 @@ public interface MainProductRepository extends JpaRepository<ProductEntity, Long
 
     /**
      * 신상품(이름 단위)
-     * - 같은 PRONAME 내에서 최신 PROCRE (동률이면 PRONUM 큰 것) 1개 대표
-     * - 대표들을 최신순으로 정렬해서 상위 N
-     * - 가격=PRODUCT.PROBORROW, 이미지=PRODUCTIMAGE.PROURL(대표 1장)
-     * - ⚠️ 스키마 접두사 DODAM. 명시
      */
     @Query(value = """
         SELECT *
@@ -49,10 +45,7 @@ public interface MainProductRepository extends JpaRepository<ProductEntity, Long
     List<Object[]> findNewProductsByName(@Param("limit") int limit);
 
     /**
-     * 인기상품(이름 단위, 임시: 대여 집계 없이 보유 개수로 정렬)
-     * - RENT 테이블 의존 제거 (후에 정확한 테이블/컬럼 확인되면 CNT 부분 교체)
-     * - 같은 PRONAME 내 대표는 최신 PROCRE → PRONUM 큰 것
-     * - 이름별 보유 개수(= PRONUM 개수) 합계로 인기순 정렬
+     * 인기상품(이름 단위, 임시: 보유 개수 기준)
      */
     @Query(value = """
         WITH per_item AS (
@@ -88,7 +81,7 @@ public interface MainProductRepository extends JpaRepository<ProductEntity, Long
             r.REP_PRONUM     AS PROID,
             r.REP_IMAGE_URL  AS IMAGE_URL,
             r.REP_PRICE      AS PRICE,
-            t.TOTAL_CNT      AS RENTCOUNT  -- 임시로 보유개수 사용
+            t.TOTAL_CNT      AS RENTCOUNT
           FROM name_total t
           JOIN rep r ON r.NAME = t.NAME
           ORDER BY t.TOTAL_CNT DESC, r.REP_PRONUM DESC
@@ -96,4 +89,53 @@ public interface MainProductRepository extends JpaRepository<ProductEntity, Long
         WHERE ROWNUM <= :limit
         """, nativeQuery = true)
     List<Object[]> findPopularProductsByName(@Param("limit") int limit);
+
+    /**
+     * ✅ 단건 상세(대표 이미지 1장 포함)
+     */
+    @Query(value = """
+        SELECT
+          p.PRONUM   AS PROID,
+          p.PRONAME  AS NAME,
+          p.PROBORROW AS PRICE,
+          TO_CHAR(p.PROCRE, 'YYYY-MM-DD"T"HH24:MI:SS') AS PROCRE,
+          (SELECT MAX(pi.PROURL)
+             FROM DODAM.PRODUCTIMAGE pi
+            WHERE pi.PRONUM = p.PRONUM) AS IMAGE_URL
+        FROM DODAM.PRODUCT p
+        WHERE p.PRONUM = :proId
+        """, nativeQuery = true)
+    Object[] findProductBasicById(@Param("proId") Long proId);
+    
+    /** ✅ 해당 상품의 상세 이미지 URL 목록 */
+    @Query(value = """
+        SELECT pi.PROURL
+          FROM DODAM.PRODUCTIMAGE pi
+         WHERE pi.PRONUM = :proId
+           AND ROWNUM <= :limit
+        """, nativeQuery = true)
+    List<String> findProductImageUrls(@Param("proId") Long proId, @Param("limit") int limit);
+    
+    /** 해당 PRONUM의 모든 이미지 URL (대표/순번 기준 정렬) */
+    @Query(value = """
+        SELECT pi.PROURL
+          FROM DODAM.PRODUCTIMAGE pi
+         WHERE pi.PRONUM = :proId
+         ORDER BY pi.PROIMGNUM
+        """, nativeQuery = true)
+    List<String> findAllImageUrlsByProId(@Param("proId") Long proId);
+    
+    /** 상위 N개만 */
+    @Query(value = """
+        SELECT PROURL
+          FROM (
+            SELECT pi.PROURL
+              FROM DODAM.PRODUCTIMAGE pi
+             WHERE pi.PRONUM = :proId
+             ORDER BY pi.PROIMGNUM
+          )
+         WHERE ROWNUM <= :limit
+        """, nativeQuery = true)
+    List<String> findImageUrlsByProIdLimited(@Param("proId") Long proId,
+                                             @Param("limit") int limit);
 }
