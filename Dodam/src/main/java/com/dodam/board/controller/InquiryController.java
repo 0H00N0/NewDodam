@@ -1,5 +1,5 @@
 package com.dodam.board.controller;
-import com.dodam.board.*;
+
 import com.dodam.board.dto.inquiry.InquiryCreateRequest;
 import com.dodam.board.dto.inquiry.InquiryResponse;
 import com.dodam.board.dto.inquiry.InquiryUpdateRequest;

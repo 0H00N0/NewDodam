@@ -1,5 +1,5 @@
 package com.dodam.board.service;
-import com.dodam.board.*; 
+
 import com.dodam.board.dto.faq.*;
 import com.dodam.board.entity.BoardEntity;
 import com.dodam.board.entity.FaqEntity;

@@ -1,5 +1,5 @@
 package com.dodam.board.controller;
-import com.dodam.board.*;
+
 import com.dodam.board.dto.notice.NoticeCreateRequest;
 import com.dodam.board.dto.notice.NoticeResponse;
 import com.dodam.board.dto.notice.NoticeUpdateRequest;
