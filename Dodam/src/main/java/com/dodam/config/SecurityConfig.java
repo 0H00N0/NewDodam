@@ -57,7 +57,9 @@ public class SecurityConfig {
                 "/board/**",
                 "/pg/**",
                 "/api/products/new", 
-                "/api/products/popular"
+                "/api/products/popular",
+                "/api/reviews/count",
+                "/api/products/**"
             ))
             // 인가
             .authorizeHttpRequests(auth -> auth
@@ -88,6 +90,7 @@ public class SecurityConfig {
                 .requestMatchers("/events/**").permitAll()
                 .requestMatchers("/board/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/products/new", "/api/products/popular").permitAll()
+                .requestMatchers("/api/products/**", "/api/reviews/count").permitAll()
                 .anyRequest().permitAll()
             )
             // 세션 기반
