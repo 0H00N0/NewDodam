@@ -1,6 +1,8 @@
 package com.dodam.admin.dto;
 
 import com.dodam.plan.Entity.PlanBenefitEntity;
+import com.dodam.plan.Entity.PlanInvoiceEntity;
+import com.dodam.plan.Entity.PlanMember;
 import com.dodam.plan.Entity.PlanNameEntity;
 import com.dodam.plan.Entity.PlanPriceEntity; // PlanPriceEntity import 추가
 import com.dodam.plan.Entity.PlansEntity;
@@ -132,4 +134,84 @@ public class AdminPlanDto {
         private String term;     // 1개월, 3개월, 12개월 등
         private List<String> benefits; // 혜택 리스트
     }
+ // =================== ▼ PlanMember DTO 추가 ▼ ===================
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlanMemberDto {
+        private Long pmId;
+        private Long memberId;
+        private String memberName;
+        private String planName;
+        private String pmStat;
+        private String pmBilMode;
+        private LocalDateTime pmStart;
+        private LocalDateTime pmTermStart;
+        private LocalDateTime pmTermEnd;
+        private LocalDateTime pmNextBil;
+        private Integer pmCycle;
+        private boolean pmCancelCheck;
+
+        public static PlanMemberDto fromEntity(PlanMember entity) {
+            return PlanMemberDto.builder()
+                    .pmId(entity.getPmId())
+                    .memberId(entity.getMember().getMnum())
+                    .memberName(entity.getMember().getMname())
+                    .planName(entity.getPlan().getPlanName().getPlanName()) // 🔥 String 필드로 접근
+                    .pmStat(entity.getPmStat().name())
+                    .pmBilMode(entity.getPmBilMode().name())
+                    .pmStart(entity.getPmStart())
+                    .pmTermStart(entity.getPmTermStart())
+                    .pmTermEnd(entity.getPmTermEnd())
+                    .pmNextBil(entity.getPmNextBil())
+                    .pmCycle(entity.getPmCycle())
+                    .pmCancelCheck(entity.isPmCancelCheck())
+                    .build();
+        }
+
+
+    }
+    // =================== ▲ PlanMember DTO 추가 끝 ▲ ===================
+
+
+    // =================== ▼ PlanInvoice DTO 추가 ▼ ===================
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlanInvoiceDto {
+        private Long piId;
+        private Long pmId;
+        private Long memberId;
+        private String memberName;
+        private String planName;
+        private BigDecimal piAmount;
+        private String piCurr;
+        private String piStat;
+        private String piUid;
+        private LocalDateTime piStart;
+        private LocalDateTime piEnd;
+        private LocalDateTime piPaid;
+
+        public static PlanInvoiceDto fromEntity(PlanInvoiceEntity entity) {
+            return PlanInvoiceDto.builder()
+                    .piId(entity.getPiId())
+                    .pmId(entity.getPlanMember().getPmId())
+                    .memberId(entity.getPlanMember().getMember().getMnum())
+                    .memberName(entity.getPlanMember().getMember().getMname())
+                    .planName(entity.getPlanMember().getPlan().getPlanName().getPlanName()) // 🔥 PlanNameEntity → String
+                    .piAmount(entity.getPiAmount())
+                    .piCurr(entity.getPiCurr())
+                    .piStat(entity.getPiStat().name())
+                    .piUid(entity.getPiUid())
+                    .piStart(entity.getPiStart())
+                    .piEnd(entity.getPiEnd())
+                    .piPaid(entity.getPiPaid())
+                    .build();
+        }
+
+    }
+    // =================== ▲ PlanInvoice DTO 추가 끝 ▲ ===================
+
 }

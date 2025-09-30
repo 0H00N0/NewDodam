@@ -199,6 +199,15 @@ public class AdminPlanService {
 
         return planMemberRepository.save(planMember);
     }
+    // 전체 구독 회원 조회
+    public List<PlanMember> getAllSubscriptions() {
+        return planMemberRepository.findAll();
+    }
+
+    // 전체 결제 내역 조회
+    public List<PlanInvoiceEntity> getAllInvoices() {
+        return planInvoiceRepository.findAll();
+    }
 
     // -------------------------------
     // ✅ 결제 내역

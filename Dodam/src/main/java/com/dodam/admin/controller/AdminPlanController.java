@@ -42,7 +42,7 @@ public class AdminPlanController {
     }
 
     @GetMapping("/{planId}")
-    public ResponseEntity<AdminPlanDto.Response> getPlanById(@PathVariable Long planId) {
+    public ResponseEntity<AdminPlanDto.Response> getPlanById(@PathVariable("planId") Long planId) {
         return ResponseEntity.ok(adminPlanService.getPlan(planId));
     }
 
@@ -75,6 +75,24 @@ public class AdminPlanController {
         String status = request.get("status");
         return ResponseEntity.ok(adminPlanService.updateSubscriptionStatus(pmId, status));
     }
+    @GetMapping("/subscriptions")
+    public ResponseEntity<List<AdminPlanDto.PlanMemberDto>> getAllSubscriptions() {
+        return ResponseEntity.ok(
+            adminPlanService.getAllSubscriptions().stream()
+                .map(AdminPlanDto.PlanMemberDto::fromEntity)
+                .toList()
+        );
+    }
+
+    @GetMapping("/invoices")
+    public ResponseEntity<List<AdminPlanDto.PlanInvoiceDto>> getAllInvoices() {
+        return ResponseEntity.ok(
+            adminPlanService.getAllInvoices().stream()
+                .map(AdminPlanDto.PlanInvoiceDto::fromEntity)
+                .toList()
+        );
+    }
+
 
     // -------------------------------
     // ✅ 결제 내역
