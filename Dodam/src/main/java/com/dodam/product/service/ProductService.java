@@ -118,7 +118,6 @@ public class ProductService {
         p.setProcertif(d.getProcertif());
         p.setProdate(d.getProdate());
         p.setResernum(d.getResernum());
-        p.setCtnum(d.getCtnum());
     }
 
     private void applyPartial(ProductDTO d, ProductEntity p, CategoryEntity cat, ProstateEntity st) {
@@ -134,7 +133,6 @@ public class ProductService {
         if (d.getProcertif() != null) p.setProcertif(d.getProcertif());
         if (d.getProdate()   != null) p.setProdate(d.getProdate());
         if (d.getResernum()  != null) p.setResernum(d.getResernum());
-        if (d.getCtnum()     != null) p.setCtnum(d.getCtnum());
     }
 
     private ProductDTO toDTO(ProductEntity p, boolean withImages) {
@@ -153,8 +151,7 @@ public class ProductService {
             .proupdate(p.getProupdate())
             .catenum(p.getCategory() != null ? p.getCategory().getCatenum() : null)
             .prosnum(p.getProstate() != null ? p.getProstate().getProsnum() : null)
-            .resernum(p.getResernum())
-            .ctnum(p.getCtnum());
+            .resernum(p.getResernum());
 
         if (withImages && p.getImages() != null) {
             List<ProductImageDTO> imgs = new ArrayList<>();
