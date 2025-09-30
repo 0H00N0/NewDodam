@@ -195,8 +195,18 @@ public class OAuthController {
         // Map.of 는 null 금지 → LinkedHashMap 사용 + null 값은 put 하지 않음
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("login", sid != null);
-        if (sid != null) body.put("sid", sid);
-
+        if (sid != null) {
+            // ✅ 이름/이메일까지 함께 내려주기
+            var opt = memberRepository.findByMid(sid);
+            if (opt.isPresent()) {
+                var m = opt.get();
+                body.put("sid", m.getMid());
+                body.put("name", m.getMname());
+                body.put("email", m.getMemail());
+            } else {
+                body.put("sid", sid);
+            }
+        }
         return ResponseEntity.ok(body);
     }
 
