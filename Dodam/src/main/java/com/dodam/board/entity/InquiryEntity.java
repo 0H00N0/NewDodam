@@ -12,8 +12,8 @@ public class InquiryEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "board_code", nullable = false)
-    private BoardEntity board;
+    @JoinColumn(name = "code", nullable = false)
+    private BoardEntity code;
     @Column(nullable = false, length = 200)
     private String title;
     @Lob @Column(nullable = false)

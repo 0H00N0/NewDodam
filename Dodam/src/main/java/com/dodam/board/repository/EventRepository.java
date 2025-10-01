@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.time.LocalDate;
 
 public interface EventRepository extends JpaRepository<EventEntity, Long> {
-    Page<EventEntity> findByBoard_Code(String boardCode, Pageable pageable);
-    Page<EventEntity> findByBoard_CodeAndActiveTrue(String boardCode, Pageable pageable);
-    Page<EventEntity> findByBoard_CodeAndStartDateLessThanEqualAndEndDateGreaterThanEqual(String boardCode, LocalDate date1, LocalDate date2, Pageable pageable);
+    Page<EventEntity> findByCode(String code, Pageable pageable);
+    Page<EventEntity> findByCodeAndActiveTrue(String code, Pageable pageable);
+    Page<EventEntity> findByCodeAndStartDateLessThanEqualAndEndDateGreaterThanEqual(String code, LocalDate date1, LocalDate date2, Pageable pageable);
 }

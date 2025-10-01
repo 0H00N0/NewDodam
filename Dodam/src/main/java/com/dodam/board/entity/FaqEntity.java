@@ -12,8 +12,8 @@ public class FaqEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "board_code", nullable = false)
-    private BoardEntity board;
+    @JoinColumn(name = "code", nullable = false)
+    private BoardEntity code;
     @Column(length = 40)
     private String category;
     @Column(nullable = false, length = 200)

@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController @RequestMapping("/inquiries") @RequiredArgsConstructor public class InquiryController {
   private final InquiryService svc;
   @PostMapping public InquiryResponse create(@Valid @RequestBody InquiryCreateRequest req){ return svc.create(req); }
-  @GetMapping public Page<InquiryResponse> list(@RequestParam String boardCode, Pageable p){ return svc.list(boardCode, p); }
+  @GetMapping public Page<InquiryResponse> list(@RequestParam String code, Pageable p){ return svc.list(code, p); }
   @GetMapping("/{id}") public InquiryResponse get(@PathVariable Long id, @RequestParam(required=false) String password){ return svc.get(id, password); }
   @PutMapping("/{id}") public InquiryResponse upd(@PathVariable Long id, @Valid @RequestBody InquiryUpdateRequest req){ return svc.update(id, req); }
   @DeleteMapping("/{id}") public void del(@PathVariable Long id){ svc.delete(id); }

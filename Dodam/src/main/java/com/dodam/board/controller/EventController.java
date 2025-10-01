@@ -16,7 +16,7 @@ import java.time.LocalDate;
   @PostMapping 
   public EventResponse create(@Valid @RequestBody EventCreateRequest req){ return svc.create(req); }
   @GetMapping 
-  public Page<EventResponse> list(@RequestParam String boardCode, @RequestParam(required=false) Boolean activeOnly, @RequestParam(required=false) LocalDate from, @RequestParam(required=false) LocalDate to, Pageable p){ return svc.list(boardCode, activeOnly, from, to, p); }
+  public Page<EventResponse> list(@RequestParam String code, @RequestParam(required=false) Boolean activeOnly, @RequestParam(required=false) LocalDate from, @RequestParam(required=false) LocalDate to, Pageable p){ return svc.list(code, activeOnly, from, to, p); }
   @GetMapping("/{id}") 
   public EventResponse get(@PathVariable Long id, @RequestParam(defaultValue="true") boolean incViews){ return svc.get(id, incViews); }
   @PutMapping("/{id}") 

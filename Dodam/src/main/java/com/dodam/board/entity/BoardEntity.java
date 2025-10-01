@@ -48,7 +48,7 @@ public class BoardEntity {
     @Column(name = "mnic", nullable = false)
     private String mnic; // 회원닉네임
 	
-    @Column(name = "boardcode")
+    @Column(name = "code")
     private String code;
     // --- 관계 매핑 ---
     @ManyToOne(fetch = FetchType.LAZY)

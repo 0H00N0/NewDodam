@@ -12,7 +12,13 @@ public class EventEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "board_code", nullable = false)
+    @JoinColumn(name = "code", nullable = false)
+    private BoardEntity code;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+        name = "board_id",            // events.board_id FK
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_events_board"))
     private BoardEntity board;
     @Column(nullable = false, length = 200)
     private String title;

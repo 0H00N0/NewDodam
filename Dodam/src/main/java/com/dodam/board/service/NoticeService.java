@@ -26,9 +26,9 @@ public class NoticeService {
 
     @Transactional
     public NoticeResponse create(NoticeCreateRequest req) {
-        BoardEntity board = boards.getByCodeOrThrow(req.getBoardCode());
+        BoardEntity board = boards.getByCodeOrThrow(req.getCode());
         NoticeEntity notice = NoticeEntity.builder()
-                .boardCode(board)
+                .code(req.getCode() != null ? board : null)
                 .title(req.getTitle())
                 .content(req.getContent())
                 .pinned(req.isPinned())
@@ -75,7 +75,7 @@ public class NoticeService {
     private NoticeResponse toDto(NoticeEntity notice) {
         return NoticeResponse.builder()
                 .id(notice.getId())
-                .boardCode(notice.getBoardCode().getCode()) // 수정된 부분
+                .code(notice.getCode().getCode()) // 수정된 부분
                 .title(notice.getTitle())
                 .content(notice.getContent())
                 .pinned(notice.isPinned())

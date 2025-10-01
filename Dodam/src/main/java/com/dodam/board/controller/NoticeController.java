@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController @RequestMapping("/notices") @RequiredArgsConstructor public class NoticeController {
   private final NoticeService svc;
   @PostMapping public NoticeResponse create(@Valid @RequestBody NoticeCreateRequest req){ return svc.create(req); }
-  @GetMapping public Page<NoticeResponse> list(@RequestParam String boardCode, Pageable p){ return svc.list(boardCode, p); }
+  @GetMapping public Page<NoticeResponse> list(@RequestParam String code, Pageable p){ return svc.list(code, p); }
   @GetMapping("/{id}") public NoticeResponse get(@PathVariable Long id, @RequestParam(defaultValue="true") boolean incViews){ return svc.get(id, incViews); }
   @PutMapping("/{id}") public NoticeResponse upd(@PathVariable Long id, @Valid @RequestBody NoticeUpdateRequest req){ return svc.update(id, req); }
   @DeleteMapping("/{id}") public void del(@PathVariable Long id){ svc.delete(id); }
