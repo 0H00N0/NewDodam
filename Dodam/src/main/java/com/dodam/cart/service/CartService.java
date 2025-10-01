@@ -26,7 +26,6 @@ public class CartService {
             .mnum(dto.getMnum())
             .pronum(dto.getPronum())
             .catenum(dto.getCatenum())
-            .resernum(dto.getResernum())
             .build();
         entity = cartRepo.save(entity);
         return toDTO(entity);
@@ -38,7 +37,6 @@ public class CartService {
             .mnum(entity.getMnum())
             .pronum(entity.getPronum())
             .catenum(entity.getCatenum())
-            .resernum(entity.getResernum())
             .build();
     }
 }
