@@ -5,7 +5,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "board") // 게시판 테이블
+@Table(name = "board") // ✅ 소문자
 @Getter
 @Setter
 @NoArgsConstructor
@@ -15,40 +15,38 @@ public class BoardEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "bnum", nullable = false)
-    private Long bnum; // 글번호 (PK)
+    @Column(name = "bnum", nullable = false) // ✅ 소문자
+    private Long bnum;
 
     @Column(name = "mnum", nullable = false)
-    private Long mnum; // 회원번호 (FK: Member 참조)
+    private Long mnum;
 
     @Column(name = "mtnum", nullable = false)
-    private Long mtnum; // 타입번호 (관리자, 구매자 등)
+    private Long mtnum;
 
-    // Board(N) : BoardCategory(1)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bcanum", nullable = false)
-    private BoardCategoryEntity boardCategory; // 카테고리
+    @JoinColumn(name = "bcanum", nullable = false) // ✅ FK도 소문자
+    private BoardCategoryEntity boardCategory;
 
-    // Board(N) : BoardState(1)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bsnum", nullable = false)
-    private BoardStateEntity boardState; // 상태
+    private BoardStateEntity boardState;
 
     @Column(name = "bsub", length = 255)
-    private String bsub; // 제목
+    private String bsub;
 
     @Column(name = "bcontent", length = 4000)
-    private String bcontent; // 내용
+    private String bcontent;
 
     @Column(name = "bdate")
-    private LocalDateTime bdate; // 작성일
+    private LocalDateTime bdate;
 
     @Column(name = "bedate")
-    private LocalDateTime bedate; // 수정일
-    
+    private LocalDateTime bedate;
+
     @Column(name = "mid", nullable = false, length = 255)
-    private String mid; // 회원 ID
+    private String mid;
 
     @Column(name = "mnic", nullable = false, length = 255)
-    private String mnic; // 작성자 닉네임
+    private String mnic;
 }

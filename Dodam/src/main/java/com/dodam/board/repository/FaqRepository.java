@@ -6,6 +6,4 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FaqRepository extends JpaRepository<FaqEntity, Long> {
-    Page<FaqEntity> findByBoard_CodeAndEnabledTrueOrderBySortOrderAsc(String code, Pageable pageable);
-    Page<FaqEntity> findByBoard_CodeAndCategoryAndEnabledTrueOrderBySortOrderAsc(String code, String category, Pageable pageable);
 }

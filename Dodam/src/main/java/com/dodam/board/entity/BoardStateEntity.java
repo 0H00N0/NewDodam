@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "board_state") // 게시판 상태 테이블
+@Table(name = "boardstate") // 게시판 상태 테이블
 @Getter
 @Setter
 @NoArgsConstructor

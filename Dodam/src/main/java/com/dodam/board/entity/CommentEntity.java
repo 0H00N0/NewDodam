@@ -4,38 +4,33 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "comment") // 게시판 댓글 테이블
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@Table(name = "boardComment") // ✅ 안전한 이름으로 변경
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class CommentEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "comment_seq")
     @SequenceGenerator(
-            name = "comment_seq",
-            sequenceName = "COMMENT_SEQ", // DB 시퀀스명
-            allocationSize = 1
+        name = "comment_seq",
+        sequenceName = "COMMENT_SEQ", // 시퀀스명은 그대로 사용 가능
+        allocationSize = 1
     )
-    @Column(name = "conum", nullable = false)
-    private Long conum; // 댓글번호 (PK)
+    @Column(name = "CONUM", nullable = false)
+    private Long conum;
 
-    @Column(name = "mnum", nullable = false)
-    private Long mnum; // 회원번호 (FK: Member 참조)
+    @Column(name = "MNUM", nullable = false)
+    private Long mnum;
 
-    // Comment(N) : Board(1)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bnum", nullable = false)
-    private BoardEntity board; // 댓글이 달린 게시글
+    @JoinColumn(name = "BNUM", nullable = false) // BOARD(BNUM) 참조
+    private BoardEntity board;
 
-    @Column(name = "ccontent", length = 1000)
-    private String ccontent; // 댓글 내용
+    @Column(name = "CCONTENT", length = 1000)
+    private String ccontent;
 
-    @Column(name = "mnic", nullable = false, length = 255)
-    private String mnic; // 작성자 닉네임 (FK: Member 참조)
+    @Column(name = "MNIC", nullable = false, length = 255)
+    private String mnic;
 
-    @Column(name = "mid", nullable = false, length = 255)
-    private String mid; // 회원 ID (FK: Member 참조)
+    @Column(name = "MID", nullable = false, length = 255)
+    private String mid;
 }

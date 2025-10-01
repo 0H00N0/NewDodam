@@ -7,9 +7,9 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(
-    name = "events",
+    name = "events", // ✅ 소문자
     indexes = {
-        @Index(name = "idx_events_board_code", columnList = "boardcode"),
+        @Index(name = "idx_events_board_bnum", columnList = "bnum"),
         @Index(name = "idx_events_active", columnList = "isactive")
     }
 )
@@ -21,48 +21,45 @@ import java.time.LocalDateTime;
 public class EventEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @SequenceGenerator(name = "ev_seq", sequenceName = "ev_seq", allocationSize = 1)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ev_seq")
     @Column(name = "eid", nullable = false)
-    private Long eid; // 이벤트 번호 (PK)
+    private Long eid;
 
-    // 이벤트가 속한 게시판 (FK)
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "boardcode", nullable = false)
-    private BoardPostEntity board; // Board 테이블 참조
+    @JoinColumn(name = "bnum", nullable = false, referencedColumnName = "bnum") // ✅ FK도 소문자
+    private BoardEntity board;
 
     @Column(name = "etitle", nullable = false, length = 200)
-    private String etitle; // 이벤트 제목
+    private String etitle;
 
     @Lob
     @Column(name = "econtent", nullable = false)
-    private String econtent; // 이벤트 상세 내용
+    private String econtent;
 
     @Column(name = "startdate", nullable = false)
-    private LocalDate startDate; // 시작일
+    private LocalDate startDate;
 
     @Column(name = "enddate", nullable = false)
-    private LocalDate endDate; // 종료일
+    private LocalDate endDate;
 
     @Column(name = "bannerurl", length = 255)
-    private String bannerUrl; // 배너 이미지 URL
+    private String bannerUrl;
 
     @Column(name = "isactive", nullable = false)
-    private boolean isActive = true; // 이벤트 활성화 여부 (기본값 true)
+    private boolean isActive = true;
 
     @Column(name = "views", nullable = false)
-    private int views = 0; // 조회수 (기본값 0)
+    private int views = 0;
 
     @Column(name = "createdat", nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now(); // 생성일
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "updatedat")
-    private LocalDateTime updatedAt; // 수정일
+    private LocalDateTime updatedAt;
 
-    // --- 엔티티 이벤트 콜백 ---
     @PreUpdate
-    void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
-    }
+    void onUpdate() { this.updatedAt = LocalDateTime.now(); }
 
     @PrePersist
     void validateDates() {

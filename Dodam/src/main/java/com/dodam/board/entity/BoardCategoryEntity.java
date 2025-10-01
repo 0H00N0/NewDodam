@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "board_category") // 게시판 카테고리 테이블
+@Table(name = "boardcategory") // 게시판 카테고리 테이블
 @Getter
 @Setter
 @NoArgsConstructor
