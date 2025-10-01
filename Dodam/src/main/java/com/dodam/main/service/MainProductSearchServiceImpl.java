@@ -1,3 +1,4 @@
+// src/main/java/com/dodam/main/service/MainProductSearchServiceImpl.java
 package com.dodam.main.service;
 
 import com.dodam.main.dto.MainProductSearchDTO;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 
 @Service
@@ -20,18 +22,16 @@ public class MainProductSearchServiceImpl implements MainProductSearchService {
     private final MainProductSearchRepository productRepository;
 
     @Override
-    public Page<MainProductSearchDTO> searchByName(String q, Pageable pageable) {
-        Specification<ProductEntity> spec = MainProductSearchSpecs.nameContains(q);
-        if (spec == null) { // q가 없을 때는 전체 검색
-            return productRepository.findAll(pageable)
-                    .map(p -> new MainProductSearchDTO(
-                            p.getPronum(),
-                            p.getProname(),
-                            p.getProborrow(),
-                            firstThumb(p),
-                            p.getProcre()
-                    ));
-        }
+    public Page<MainProductSearchDTO> search(
+            String q,
+            Integer ageMin, Integer ageMax,
+            BigDecimal priceMin, BigDecimal priceMax,
+            Pageable pageable
+    ) {
+        Specification<ProductEntity> spec = Specification
+                .where(MainProductSearchSpecs.nameContains(q))
+                .and(MainProductSearchSpecs.ageBetween(ageMin, ageMax))
+                .and(MainProductSearchSpecs.priceBetween(priceMin, priceMax));
 
         return productRepository.findAll(spec, pageable)
                 .map(p -> new MainProductSearchDTO(
