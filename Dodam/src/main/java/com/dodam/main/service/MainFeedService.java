@@ -31,16 +31,16 @@ public class MainFeedService {
             )).collect(Collectors.toList());
     }
 
-    public List<MainBoardBriefDTO> getLatestBoards(Long bcnum, int limit) {
-        return repo.findLatestBoardsByBcnum(bcnum, limit).stream()
+    public List<MainBoardBriefDTO> getLatestBoards(Long bcanum, int limit) {
+        return repo.findLatestBoardsByBcanum(bcanum, limit).stream()
             .map(r -> new MainBoardBriefDTO(
                 toLong(r[0]), (String) r[1], (String) r[2], (String) r[3],
                 toLong(r[4]), (String) r[5]
             )).collect(Collectors.toList());
     }
 
-    public List<MainBoardBriefDTO> getPopularBoards(Long bcnum, int limit) {
-        return repo.findPopularBoardsByBcnum(bcnum, limit).stream()
+    public List<MainBoardBriefDTO> getPopularBoards(Long bcanum, int limit) {
+        return repo.findPopularBoardsByBcanum(bcanum, limit).stream()
             .map(r -> new MainBoardBriefDTO(
                 toLong(r[0]), (String) r[1], (String) r[2], (String) r[3],
                 toLong(r[4]), (String) r[5]

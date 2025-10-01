@@ -41,16 +41,16 @@ public interface MainFeedRepository extends JpaRepository<ReviewEntity, Long> {
               b.BTITLE AS TITLE,
               b.MNIC   AS AUTHOR,
               TO_CHAR(b.BDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_AT,
-              b.BCNUM  AS BCNUM,
-              c.BCNAME AS BCNAME
+              b.BCANUM  AS BCANUM,
+              c.BCANAME AS BCANAME
             FROM DODAM.BOARD b
-            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCNUM = b.BCNUM
-           WHERE b.BCNUM = :bcnum
+            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCANUM = b.BCANUM
+           WHERE b.BCANUM = :bcanum
            ORDER BY b.BDATE DESC
           )
          WHERE ROWNUM <= :limit
         """, nativeQuery = true)
-    List<Object[]> findLatestBoardsByBcnum(@Param("bcnum") Long bcnum, @Param("limit") int limit);
+    List<Object[]> findLatestBoardsByBcanum(@Param("bcanum") Long bcanum, @Param("limit") int limit);
 
     /** 카테고리 인기글 (임시: 최신순 → 좋아요/조회 테이블 있으면 ORDER BY 교체) */
     @Query(value = """
@@ -61,14 +61,14 @@ public interface MainFeedRepository extends JpaRepository<ReviewEntity, Long> {
               b.BTITLE AS TITLE,
               b.MNIC   AS AUTHOR,
               TO_CHAR(b.BDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_AT,
-              b.BCNUM  AS BCNUM,
-              c.BCNAME AS BCNAME
+              b.BCANUM  AS BCANUM,
+              c.BCANAME AS BCANAME
             FROM DODAM.BOARD b
-            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCNUM = b.BCNUM
-           WHERE b.BCNUM = :bcnum
+            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCANUM = b.BCANUM
+           WHERE b.BCANUM = :bcanum
            ORDER BY b.BDATE DESC  -- TODO: 좋아요/조회 기준으로 교체 가능
           )
          WHERE ROWNUM <= :limit
         """, nativeQuery = true)
-    List<Object[]> findPopularBoardsByBcnum(@Param("bcnum") Long bcnum, @Param("limit") int limit);
+    List<Object[]> findPopularBoardsByBcanum(@Param("bcanum") Long bcanum, @Param("limit") int limit);
 }
