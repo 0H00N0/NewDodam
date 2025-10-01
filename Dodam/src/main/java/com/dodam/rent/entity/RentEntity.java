@@ -2,7 +2,6 @@
 
 import com.dodam.member.entity.MemberEntity;
 import com.dodam.product.entity.ProductEntity;
-import com.dodam.reservation.entity.Reservation;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.ColumnDefault;
@@ -30,10 +29,6 @@ public class RentEntity { //대여 테이블
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "mnum", nullable = false)
     private MemberEntity member;
-
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "resernum", nullable = true)
-    private Reservation reservation;
 
     @Column(name = "rendate", nullable = true)
     private LocalDateTime renDate;

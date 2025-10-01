@@ -54,7 +54,6 @@ public class AdminProductService {
                 .proage(requestDTO.getProage())
                 .procertif(requestDTO.getProcertif())
                 .prodate(requestDTO.getProdate())
-                .resernum(requestDTO.getResernum())
                 .category(category)
                 .prostate(prostate)
                 .images(new ArrayList<>())
@@ -100,7 +99,6 @@ public class AdminProductService {
         productToUpdate.setProage(requestDTO.getProage());
         productToUpdate.setProcertif(requestDTO.getProcertif());
         productToUpdate.setProdate(requestDTO.getProdate());
-        productToUpdate.setResernum(requestDTO.getResernum());
         productToUpdate.setCategory(category);
         productToUpdate.setProstate(prostate);
 
@@ -145,25 +143,24 @@ public class AdminProductService {
                         .proage(Integer.parseInt(line[5]))              // 연령
                         .procertif(line[6])                             // 인증
                         .prodate(LocalDate.parse(line[7]))              // 출시일
-                        .resernum(Long.parseLong(line[8]))              // 예약번호
-                        .category(categoryRepository.findById(Long.parseLong(line[9])).orElseThrow()) // 카테고리
-                        .prostate(prostateRepository.findById(Long.parseLong(line[10])).orElseThrow()) // 상태
+                        .category(categoryRepository.findById(Long.parseLong(line[8])).orElseThrow()) // 카테고리
+                        .prostate(prostateRepository.findById(Long.parseLong(line[9])).orElseThrow()) // 상태
                         .images(new ArrayList<>())
                         .build();
 
-                // ✅ 11번째(메인), 12번째(상세) 컬럼에서 이미지 URL 읽기
-                if (line.length > 11 && line[11] != null && !line[11].isBlank()) {
+                // ✅ 10번째(메인), 11번째(상세) 컬럼에서 이미지 URL 읽기
+                if (line.length > 10 && line[10] != null && !line[10].isBlank()) {
                     product.getImages().add(ProductImageEntity.builder()
                             .proimageorder(1)
-                            .prourl(line[11])
+                            .prourl(line[10])
                             .product(product)
                             .category(product.getCategory())
                             .build());
                 }
-                if (line.length > 12 && line[12] != null && !line[12].isBlank()) {
+                if (line.length > 11 && line[11] != null && !line[11].isBlank()) {
                     product.getImages().add(ProductImageEntity.builder()
                             .proimageorder(2)
-                            .prodetailimage(line[12])
+                            .prodetailimage(line[11])
                             .product(product)
                             .category(product.getCategory())
                             .build());

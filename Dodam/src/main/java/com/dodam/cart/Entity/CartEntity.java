@@ -26,7 +26,4 @@ public class CartEntity {
 
     @Column(nullable = false)
     private Long catenum; // FK: 카테고리번호
-
-    @Column(nullable = false)
-    private Long resernum; // FK: 대여예약번호
 }
