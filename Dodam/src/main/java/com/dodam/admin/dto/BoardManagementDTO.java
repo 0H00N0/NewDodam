@@ -25,7 +25,7 @@ public class BoardManagementDTO {
         // DTO를 Entity로 변환하는 메서드
         public BoardCategoryEntity toEntity() {
             BoardCategoryEntity entity = new BoardCategoryEntity();
-            entity.setBcname(this.categoryName);
+            entity.setBcaname(this.categoryName);
             return entity;
         }
     }
@@ -42,8 +42,8 @@ public class BoardManagementDTO {
         // Entity를 DTO로 변환하는 정적 팩토리 메서드
         public static BoardCategoryResponse fromEntity(BoardCategoryEntity entity) {
             return BoardCategoryResponse.builder()
-                    .id(entity.getBcnum())
-                    .name(entity.getBcname())
+                    .id(entity.getBcanum())
+                    .name(entity.getBcaname())
                     .build();
         }
     }
@@ -63,7 +63,7 @@ public class BoardManagementDTO {
         public static PostResponse fromEntity(BoardEntity entity) {
             return PostResponse.builder()
                     .id(entity.getBnum())
-                    .title(entity.getBtitle())
+                    .title(entity.getBsub())
                     .authorId(entity.getMid())
                     .authorNickname(entity.getMnic())
                     .createdAt(entity.getBdate())
@@ -89,7 +89,7 @@ public class BoardManagementDTO {
         public static PostDetailResponse fromEntity(BoardEntity entity) {
             return PostDetailResponse.builder()
                     .id(entity.getBnum())
-                    .title(entity.getBtitle())
+                    .title(entity.getBsub())
                     .content(entity.getBcontent())
                     .authorId(entity.getMid())
                     .authorNickname(entity.getMnic())
