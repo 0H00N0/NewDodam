@@ -1,8 +1,10 @@
 package com.dodam.member.repository;
 
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.dodam.member.entity.MemberEntity;
+import com.dodam.member.entity.MemberEntity.MemStatus;
 
 public interface MemberRepository extends JpaRepository<MemberEntity, Long> {
     boolean existsByMid(String mid);
@@ -25,4 +27,8 @@ public interface MemberRepository extends JpaRepository<MemberEntity, Long> {
 
     //전화번호로 비밀번호 찾기
     Optional<MemberEntity> findByMidAndMnameAndMtel(String mid, String mname, String mtel);
+    
+    //관리자용 회원 상태별 조회
+    List<MemberEntity> findByMemstatus(MemStatus status);
+
 }

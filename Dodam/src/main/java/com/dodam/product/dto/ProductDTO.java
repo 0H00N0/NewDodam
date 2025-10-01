@@ -35,8 +35,6 @@ public class ProductDTO {
     // FK(숫자)
     private Long catenum;   // category PK
     private Long prosnum;   // prostate PK
-    private Long resernum;  // 예약 FK(스칼라)
-    private Long ctnum;     // 쿠폰종류 FK(스칼라)
 
     // 이미지
     private List<ProductImageDTO> images;

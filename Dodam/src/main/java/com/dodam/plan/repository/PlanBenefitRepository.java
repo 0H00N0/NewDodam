@@ -15,5 +15,11 @@ public interface PlanBenefitRepository extends JpaRepository<PlanBenefitEntity, 
 	List<PlanBenefitEntity> findByPlan_PlanId(Long planId);
 	// PlanBenefitRepository
 	void deleteByPlan_PlanId(Long planId);
+	// 특정 플랜에 속한 혜택 정보 전체 조회
+    List<PlanBenefitEntity> findByPlan(PlansEntity plan);
+
+    // 특정 플랜의 혜택 정보 전체 삭제
+    void deleteByPlan(PlansEntity plan);
+	
 }
 

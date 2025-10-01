@@ -61,13 +61,6 @@ public class ProductEntity {
     @JoinColumn(name = "prosnum", nullable = false)
     private ProstateEntity prostate;
 
-    // 정의서상 FK지만 대상 테이블 스펙 미제공 → 우선 스칼라 보유
-    @Column(name = "resernum", nullable = false)
-    private Long resernum;
-
-    @Column(name = "ctnum", nullable = false)
-    private Long ctnum;
-    
  // ==== 이미지 양방향 ====
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("proimageorder ASC")

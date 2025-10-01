@@ -34,9 +34,6 @@ public class First {
     @JoinColumn(name = "evNum", nullable = false)
     private EventNumber event;   // FK: 이벤트 번호
 
-    @Column(name = "cTNum")
-    private String cTNum;   // FK: 쿠폰타입
-
     @Column(name = "fDate", nullable = false)
     private LocalDateTime fdate;   // 참여 일시
 

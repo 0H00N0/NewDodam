@@ -1,6 +1,8 @@
 package com.dodam.admin.dto;
 
 import com.dodam.plan.Entity.PlanBenefitEntity;
+import com.dodam.plan.Entity.PlanInvoiceEntity;
+import com.dodam.plan.Entity.PlanMember;
 import com.dodam.plan.Entity.PlanNameEntity;
 import com.dodam.plan.Entity.PlanPriceEntity; // PlanPriceEntity import 추가
 import com.dodam.plan.Entity.PlansEntity;
@@ -16,11 +18,16 @@ import java.math.BigDecimal; // BigDecimal import 추가
 import java.time.LocalDateTime;
 import java.util.List; // List import 추가
 import java.util.stream.Collectors; // Collectors import 추가
+import java.time.format.DateTimeFormatter;
 
 
 public class AdminPlanDto {
 
     // =================== 코드 수정/추가된 부분 시작 ===================
+	
+
+	public static final DateTimeFormatter FORMATTER =
+	        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Data
     @Builder
@@ -132,4 +139,83 @@ public class AdminPlanDto {
         private String term;     // 1개월, 3개월, 12개월 등
         private List<String> benefits; // 혜택 리스트
     }
+ // =================== ▼ PlanMember DTO 추가 ▼ ===================
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlanMemberDto {
+        private Long pmId;
+        private Long memberId;
+        private String memberName;
+        private String planName;
+        private String pmStat;
+        private String pmBilMode;
+        private String pmStart;     // LocalDateTime → String
+        private String pmTermStart;
+        private String pmTermEnd;
+        private String pmNextBil;
+        private Integer pmCycle;
+        private boolean pmCancelCheck;
+
+        public static PlanMemberDto fromEntity(PlanMember entity) {
+            return PlanMemberDto.builder()
+                    .pmId(entity.getPmId())
+                    .memberId(entity.getMember().getMnum())
+                    .memberName(entity.getMember().getMname())
+                    .planName(entity.getPlan().getPlanName().getPlanName())
+                    .pmStat(entity.getPmStat().name())
+                    .pmBilMode(entity.getPmBilMode().name())
+                    .pmStart(entity.getPmStart() != null ? entity.getPmStart().format(FORMATTER) : null)
+                    .pmTermStart(entity.getPmTermStart() != null ? entity.getPmTermStart().format(FORMATTER) : null)
+                    .pmTermEnd(entity.getPmTermEnd() != null ? entity.getPmTermEnd().format(FORMATTER) : null)
+                    .pmNextBil(entity.getPmNextBil() != null ? entity.getPmNextBil().format(FORMATTER) : null)
+                    .pmCycle(entity.getPmCycle())
+                    .pmCancelCheck(entity.isPmCancelCheck())
+                    .build();
+        }
+    }
+
+    // =================== ▲ PlanMember DTO 추가 끝 ▲ ===================
+
+
+    // =================== ▼ PlanInvoice DTO 추가 ▼ ===================
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlanInvoiceDto {
+        private Long piId;
+        private Long pmId;
+        private Long memberId;
+        private String memberName;
+        private String planName;
+        private BigDecimal piAmount;
+        private String piCurr;
+        private String piStat;
+        private String piUid;
+        private String piStart;   // LocalDateTime → String
+        private String piEnd;
+        private String piPaid;
+
+        public static PlanInvoiceDto fromEntity(PlanInvoiceEntity entity) {
+            return PlanInvoiceDto.builder()
+                    .piId(entity.getPiId())
+                    .pmId(entity.getPlanMember().getPmId())
+                    .memberId(entity.getPlanMember().getMember().getMnum())
+                    .memberName(entity.getPlanMember().getMember().getMname())
+                    .planName(entity.getPlanMember().getPlan().getPlanName().getPlanName())
+                    .piAmount(entity.getPiAmount())
+                    .piCurr(entity.getPiCurr())
+                    .piStat(entity.getPiStat().name())
+                    .piUid(entity.getPiUid())
+                    .piStart(entity.getPiStart() != null ? entity.getPiStart().format(FORMATTER) : null)
+                    .piEnd(entity.getPiEnd() != null ? entity.getPiEnd().format(FORMATTER) : null)
+                    .piPaid(entity.getPiPaid() != null ? entity.getPiPaid().format(FORMATTER) : null)
+                    .build();
+        }
+    }
+
+    // =================== ▲ PlanInvoice DTO 추가 끝 ▲ ===================
+
 }

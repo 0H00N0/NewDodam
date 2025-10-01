@@ -33,23 +33,24 @@ public class ProductController {
         }
 
     @GetMapping("/{pronum}")
-    public ProductDTO get(@PathVariable Long pronum) {
+    public ProductDTO get(@PathVariable("pronum") Long pronum) {
         return productService.get(pronum);
     }
 
+    
     @PostMapping
     public ProductDTO create(@RequestBody ProductDTO dto) {
         return productService.create(dto);
     }
 
     @PutMapping("/{pronum}")
-    public ProductDTO update(@PathVariable Long pronum, @RequestBody ProductDTO dto) {
+    public ProductDTO update(@PathVariable("pronum") Long pronum, @RequestBody ProductDTO dto) {
         dto.setPronum(pronum);
         return productService.update(dto);
     }
 
     @DeleteMapping("/{pronum}")
-    public void delete(@PathVariable Long pronum) {
+    public void delete(@PathVariable("pronum") Long pronum) {
         productService.delete(pronum);
     }
     

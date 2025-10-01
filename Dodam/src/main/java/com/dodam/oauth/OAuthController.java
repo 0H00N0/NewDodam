@@ -101,10 +101,34 @@ public class OAuthController {
 
     	    final String mid = providerLower + ":" + uid;
 
-    	    // ✅ ACTIVE만 중복 판단(활성 회원이 이미 있으면 거절)
-    	    if (memberRepository.existsByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)) {
-    	        throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid");
+    	    // ✅ ACTIVE가 이미 있으면: 그냥 로그인 처리 (idempotent)
+    	    var existingOpt = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE);
+    	    if (existingOpt.isPresent()) {
+    	        MemberEntity member = existingOpt.get();
+
+    	        // 세션 로그인
+    	        session.setAttribute("sid", member.getMid());
+
+    	        // 프로필 미완성 여부(프론트 안내용) — 기존 로직 재사용
+    	        boolean telMissing  = (member.getMtel() == null || member.getMtel().isBlank() || "00000000000".equals(member.getMtel()));
+    	        boolean addrMissing = (member.getMaddr() == null || member.getMaddr().isBlank() || "SOCIAL_SIGNUP".equals(member.getMaddr()));
+    	        boolean postMissing = (member.getMpost() == null || member.getMpost() == 0L);
+    	        boolean profileIncomplete = telMissing || addrMissing || postMissing;
+
+    	        return ResponseEntity.ok(Map.of(
+    	            "login", true,
+    	            "mid", member.getMid(),
+    	            "name", member.getMname(),
+    	            "email", member.getMemail(),
+    	            "profileIncomplete", profileIncomplete,
+    	            "missing", Map.of(
+    	                "tel", telMissing,
+    	                "addr", addrMissing,
+    	                "post", postMissing
+    	            )
+    	        ));
     	    }
+
 
     	    // ✅ FK 준비: LOGINMETHOD(KAKAO/NAVER), MEMTYPE(일반=mtcode 0)
     	    LoginmethodEntity lm = loginmethodRepository.findByLmtype(providerUpper)
@@ -171,8 +195,18 @@ public class OAuthController {
         // Map.of 는 null 금지 → LinkedHashMap 사용 + null 값은 put 하지 않음
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("login", sid != null);
-        if (sid != null) body.put("sid", sid);
-
+        if (sid != null) {
+            // ✅ 이름/이메일까지 함께 내려주기
+            var opt = memberRepository.findByMid(sid);
+            if (opt.isPresent()) {
+                var m = opt.get();
+                body.put("sid", m.getMid());
+                body.put("name", m.getMname());
+                body.put("email", m.getMemail());
+            } else {
+                body.put("sid", sid);
+            }
+        }
         return ResponseEntity.ok(body);
     }
 
