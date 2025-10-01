@@ -1,54 +1,68 @@
 package com.dodam.board.entity;
 
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "board") // 게시판 테이블
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@NoArgsConstructor // JPA는 기본 생성자가 필요합니다.
+@Table(name = "Board") // 데이터베이스의 'Board' 테이블과 매핑
 public class BoardEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "bnum", nullable = false)
-    private Long bnum; // 글번호 (PK)
+    @Column(name = "bnum")
+    private Long bnum; // 글번호 (Primary Key)
 
     @Column(name = "mnum", nullable = false)
-    private Long mnum; // 회원번호 (FK: Member 참조)
+    private Long mnum; // 회원번호
 
-    @Column(name = "mtnum", nullable = false)
-    private Long mtnum; // 타입번호 (관리자, 구매자 등)
+    @Column(name = "tnum")
+    private Long tnum; // 타입번호
 
-    // Board(N) : BoardCategory(1)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bcanum", nullable = false)
-    private BoardCategoryEntity boardCategory; // 카테고리
+    @Column(name = "btitle", length = 255)
+    private String btitle; // 제목
 
-    // Board(N) : BoardState(1)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bsnum", nullable = false)
-    private BoardStateEntity boardState; // 상태
-
-    @Column(name = "bsub", length = 255)
-    private String bsub; // 제목
-
-    @Column(name = "bcontent", length = 4000)
+    @Lob // 내용처럼 긴 텍스트는 @Lob으로 매핑합니다.
+    @Column(name = "bcontent")
     private String bcontent; // 내용
 
+    @CreationTimestamp // 엔티티 생성 시 자동으로 현재 시간이 기록됩니다.
     @Column(name = "bdate")
     private LocalDateTime bdate; // 작성일
 
+    @UpdateTimestamp // 엔티티 수정 시 자동으로 현재 시간이 기록됩니다.
     @Column(name = "bedate")
     private LocalDateTime bedate; // 수정일
     
-    @Column(name = "mid", nullable = false, length = 255)
-    private String mid; // 회원 ID
+    @Column(name = "mid", nullable = false)
+    private String mid; // 회원ID
 
-    @Column(name = "mnic", nullable = false, length = 255)
-    private String mnic; // 작성자 닉네임
+    @Column(name = "mnic", nullable = false)
+    private String mnic; // 회원닉네임
+	
+    @Column(name = "boardcode")
+    private String code;
+    // --- 관계 매핑 ---
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "boardid", nullable = false)  // ← referencedColumnName 제거!
+    private BoardEntity board;
+    
+    // Board(N) : BoardCategory(1) -> 다대일 관계
+    @ManyToOne(fetch = FetchType.LAZY) // 지연 로딩으로 성능 최적화
+    @JoinColumn(name = "bcnum") // 외래 키(FK) 컬럼 지정
+    private BoardCategoryEntity boardCategory;
+
+    // Board(N) : BoardState(1) -> 다대일 관계
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bsnum") // 외래 키(FK) 컬럼 지정
+    private BoardStateEntity boardState;
+    
 }
