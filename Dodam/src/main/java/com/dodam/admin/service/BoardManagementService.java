@@ -74,7 +74,7 @@ public class BoardManagementService {
         if (!boardCategoryRepository.existsById(categoryId)) {
             throw new IllegalArgumentException("존재하지 않는 게시판 카테고리입니다: " + categoryId);
         }
-        return boardRepository.findByBoardCategory_BcnumOrderByBnumDesc(categoryId).stream()
+        return boardRepository.findByBoardCategory_BcanumOrderByBnumDesc(categoryId).stream()
                 .map(BoardManagementDTO.PostResponse::fromEntity)
                 .collect(Collectors.toList());
     }

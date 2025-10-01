@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
-    boolean existsByCode(String code);
     
  // ▼▼▼ 이 코드를 추가해주세요 ▼▼▼
     /**
@@ -15,5 +14,5 @@ public interface BoardRepository extends JpaRepository<BoardEntity, Long> {
      * 게시글 번호(bnum)를 기준으로 내림차순 정렬합니다.
      * BoardEntity -> boardCategory -> bcnum 경로로 탐색합니다.
      */
-    List<BoardEntity> findByBoardCategory_BcnumOrderByBnumDesc(Long bcnum);
+    List<BoardEntity> findByBoardCategory_BcanumOrderByBnumDesc(Long bcanum);
 }
