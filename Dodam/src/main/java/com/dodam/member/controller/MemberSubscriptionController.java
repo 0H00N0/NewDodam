@@ -15,14 +15,14 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/member")
+@RequestMapping("/member/subscriptions")
 public class MemberSubscriptionController {
 
     private final MemberRepository memberRepo;
     private final PlanMemberRepository planMemberRepo;
 
     /** 내 구독 목록 */
-    @GetMapping("/subscriptions/my")
+    @GetMapping("/my")
     public ResponseEntity<?> mySubscriptions(HttpSession session) {
         final String mid = (String) session.getAttribute("sid");
         if (!StringUtils.hasText(mid)) {
