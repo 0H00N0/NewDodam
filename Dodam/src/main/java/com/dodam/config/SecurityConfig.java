@@ -1,4 +1,3 @@
-
 package com.dodam.config;
 
 import lombok.RequiredArgsConstructor;
@@ -32,7 +31,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-        	// CORS
+           // CORS
             .cors(cors -> cors.configurationSource(corsSource()))
             // CSRF: 상태변경 엔드포인트만 예외
             .csrf(csrf -> csrf.ignoringRequestMatchers(
