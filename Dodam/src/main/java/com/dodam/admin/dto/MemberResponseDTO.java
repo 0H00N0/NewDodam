@@ -1,6 +1,8 @@
 package com.dodam.admin.dto;
 
 import com.dodam.member.entity.MemberEntity;
+import com.dodam.member.entity.MemberEntity.MemStatus;
+
 import lombok.Builder;
 import lombok.Getter;
 
@@ -21,12 +23,17 @@ public class MemberResponseDTO {
     private Long mpost;
     private LocalDate mbirth;
     private LocalDate mreg;
-    private String roleName; // "일반", "SuperAdmin" 등
-    private String lmtype;   // "LOCAL", "KAKAO" 등
+    private String roleName;   // "일반", "SuperAdmin" 등
+    private String lmtype;     // "LOCAL", "KAKAO" 등
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    // Entity를 DTO로 변환하는 정적 팩토리 메서드
+    // ✅ 신규 추가 필드
+    private MemStatus memstatus;     // ACTIVE / DELETED
+    private LocalDateTime deletedAt;     // 탈퇴일
+    private String deletedReason;    // 탈퇴 사유
+
+    // Entity -> DTO 변환
     public static MemberResponseDTO fromEntity(MemberEntity entity) {
         return MemberResponseDTO.builder()
                 .mnum(entity.getMnum())
@@ -43,6 +50,10 @@ public class MemberResponseDTO {
                 .lmtype(entity.getLoginmethod() != null ? entity.getLoginmethod().getLmtype() : null)
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                // ✅ 추가 매핑
+                .memstatus(entity.getMemstatus())
+                .deletedAt(entity.getDeletedAt())
+                .deletedReason(entity.getDeletedReason())
                 .build();
     }
 }
