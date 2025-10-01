@@ -208,7 +208,6 @@ public class MemberService {
         MemberEntity m = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "회원 없음/이미 탈퇴"));
 
-        // LOCAL만 비밀번호 검증 (소셜은 생략)
         boolean isLocal = (m.getLoginmethod() == null) ||
                           "LOCAL".equalsIgnoreCase(m.getLoginmethod().getLmtype());
         if (isLocal) {
@@ -217,27 +216,28 @@ public class MemberService {
             }
         }
 
-        // 로그인 차단: 비번 랜덤 해시로 교체
+        // 로그인 차단
         m.setMpw(passwordEncoder.encode(UUID.randomUUID().toString()));
 
-        // 개인정보 최소화/마스킹 — 표시용만 남김
+        // ✅ 안전 마스킹 (길이/UNIQUE/Oracle "" 주의)
+        String suf36 = Long.toString(m.getMnum(), 36);
+        int last3 = (int)(m.getMnum() % 1000);
+
+        // 👇 방식 A: mid도 유일하게 변경 (UNIQUE 잠금 해제)
+        m.setMid("deleted_" + suf36);
+
         m.setMname("탈퇴한 사용자");
-        m.setMnic(null);
-        m.setMtel("000-0000-0000");
-        m.setMaddr("");
+        m.setMnic("d-" + suf36);
+        m.setMtel(String.format("000-0000-%03d", last3)); // 13자 고정
+        m.setMaddr("-");                                  // "" 금지(Oracle)
         m.setMpost(0L);
-        // (선택) 이메일도 마스킹하려면 아래 사용
-        m.setMemail("deleted+" + m.getMnum() + "@invalid.local");
+        m.setMemail("deleted+" + suf36 + "@invalid.local");
 
-        // 소셜(있으면) 연결 해제 — 동일 소셜로 재가입 허용
-        if (m.getLoginmethod() != null) {
-        }
-
-        // 상태 전환 + 이력(카멜)
         m.setMemstatus(MemberEntity.MemStatus.DELETED);
         m.setDeletedAt(LocalDateTime.now());
-        m.setDeletedReason(reasonOrNull);
+        m.setDeletedReason((reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null);
 
         memberRepository.save(m);
     }
+
 }

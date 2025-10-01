@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
@@ -90,11 +91,20 @@ public class MemberController {
     public ResponseEntity<?> me(HttpSession session) {
         String sid = (String) session.getAttribute("sid");
         if (sid == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "unauthenticated"));
+            return ResponseEntity.ok(Map.of("login", false));
         }
-        MemberDTO dto = memberService.findByMid(sid); // ✅ ACTIVE만 조회
-        return ResponseEntity.ok(dto);
+        try {
+            MemberDTO dto = memberService.findByMid(sid); // ACTIVE만 조회
+            return ResponseEntity.ok(Map.of(
+                "login", true,
+                "member", dto,
+                "joinWay", dto.getJoinWay()  // 있으면 내려주기
+            ));
+        } catch (ResponseStatusException e) {
+            // 탈퇴/미존재 등 -> 세션 정리 후 비로그인으로 응답
+            session.invalidate();
+            return ResponseEntity.ok(Map.of("login", false));
+        }
     }
 
     // 이름+전화번호로 아이디 찾기

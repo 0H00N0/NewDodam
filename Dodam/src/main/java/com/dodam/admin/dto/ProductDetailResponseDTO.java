@@ -1,6 +1,7 @@
 package com.dodam.admin.dto;
 
 import com.dodam.product.entity.ProductEntity;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Getter;
 
 import java.math.BigDecimal;
@@ -10,19 +11,24 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Getter
-public class ProductDetailResponseDTO { //상품 상세 조회 dto
+public class ProductDetailResponseDTO { // 상품 상세 조회 DTO
 
     private Long pronum;
     private String proname;
     private String prodetail;
-    private BigDecimal proprice;
-    private BigDecimal proborrow;
+    private BigDecimal proborrow;   // ✅ 대여 가격만 유지
     private String probrand;
     private String promade;
     private Integer proage;
     private String procertif;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate prodate;
+
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime procre;
+
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime proupdate;
 
     // 연관 정보
@@ -36,8 +42,7 @@ public class ProductDetailResponseDTO { //상품 상세 조회 dto
         this.pronum = product.getPronum();
         this.proname = product.getProname();
         this.prodetail = product.getProdetail();
-        this.proprice = product.getProprice();
-        this.proborrow = product.getProborrow();
+        this.proborrow = product.getProborrow();  // ✅ 대여 가격 매핑
         this.probrand = product.getProbrand();
         this.promade = product.getPromade();
         this.proage = product.getProage();

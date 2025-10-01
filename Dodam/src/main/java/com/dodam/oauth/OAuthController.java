@@ -15,6 +15,7 @@ import com.dodam.member.repository.MemtypeRepository;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -54,109 +55,114 @@ public class OAuthController {
     private String naverRedirectUri;
 
     @PostMapping(
-        value = "/{provider}/token",
-        consumes = MediaType.APPLICATION_JSON_VALUE,
-        produces = MediaType.APPLICATION_JSON_VALUE
-    )
-    public ResponseEntity<?> verifyAndLogin(
-            @PathVariable("provider") String provider,
-            @RequestBody Map<String, String> body,
-            HttpSession session
-    ) {
-        final String providerLower = provider.toLowerCase(Locale.ROOT);
-        final String providerUpper = providerLower.toUpperCase(Locale.ROOT);
+    	    value = "/{provider}/token",
+    	    consumes = MediaType.APPLICATION_JSON_VALUE,
+    	    produces = MediaType.APPLICATION_JSON_VALUE
+    	)
+    	@Transactional
+    	public ResponseEntity<?> verifyAndLogin(
+    	        @PathVariable("provider") String provider,
+    	        @RequestBody Map<String, String> body,
+    	        HttpSession session
+    	) {
+    	    final String providerLower = provider.toLowerCase(Locale.ROOT);
+    	    final String providerUpper = providerLower.toUpperCase(Locale.ROOT);
 
-        String token = body.get("token");
-        String code  = body.get("code");
-        String state = body.get("state"); // (naver)
+    	    String token = body.get("token");
+    	    String code  = body.get("code");
+    	    String state = body.get("state"); // (naver)
 
-        // code -> access_token 교환
-        if ((token == null || token.isBlank()) && code != null && !code.isBlank()) {
-            token = switch (providerLower) {
-                case "kakao" -> exchangeKakaoCodeForToken(code);
-                case "naver" -> exchangeNaverCodeForToken(code, state);
-                default -> null;
-            };
-        }
-        if (token == null || token.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "token or code is required");
-        }
+    	    // code -> access_token 교환
+    	    if ((token == null || token.isBlank()) && code != null && !code.isBlank()) {
+    	        token = switch (providerLower) {
+    	            case "kakao" -> exchangeKakaoCodeForToken(code);
+    	            case "naver" -> exchangeNaverCodeForToken(code, state);
+    	            default -> null;
+    	        };
+    	    }
+    	    if (token == null || token.isBlank()) {
+    	        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "token or code is required");
+    	    }
 
-        // 사용자 정보 호출
-        Map<String, Object> userinfo = switch (providerLower) {
-            case "kakao" -> fetchKakaoUser(token);
-            case "naver" -> fetchNaverUser(token);
-            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported provider");
-        };
+    	    // 사용자 정보 호출
+    	    Map<String, Object> userinfo = switch (providerLower) {
+    	        case "kakao" -> fetchKakaoUser(token);
+    	        case "naver" -> fetchNaverUser(token);
+    	        default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported provider");
+    	    };
 
-        String uid         = extractUid(providerLower, userinfo);
-        String displayName = extractName(providerLower, userinfo);
-        String email       = extractEmail(providerLower, userinfo);
+    	    String uid         = extractUid(providerLower, userinfo);
+    	    String displayName = extractName(providerLower, userinfo);
+    	    String email       = extractEmail(providerLower, userinfo);
 
-        // ✅ 전화번호는 재대입 금지(람다에서 쓰므로), 미리 확정값으로
-        String telRaw = extractPhone(providerLower, userinfo);
-        final String telFinal = (telRaw == null || telRaw.isBlank()) ? "00000000000" : telRaw;
+    	    // 전화번호 확정
+    	    String telRaw = extractPhone(providerLower, userinfo);
+    	    final String telFinal = (telRaw == null || telRaw.isBlank()) ? "00000000000" : telRaw;
 
-        final String mid = providerLower + ":" + uid;
+    	    final String mid = providerLower + ":" + uid;
 
-        MemberEntity member = memberRepository.findByMid(mid).orElseGet(() -> {
-            LoginmethodEntity lm = loginmethodRepository.findByLmtype(providerUpper)
-                    .orElseGet(() -> loginmethodRepository.save(
-                            LoginmethodEntity.builder().lmtype(providerUpper).build()
-                    ));
+    	    // ✅ ACTIVE만 중복 판단(활성 회원이 이미 있으면 거절)
+    	    if (memberRepository.existsByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)) {
+    	        throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid");
+    	    }
 
-            MemtypeEntity mt = memtypeRepository.findByMtcode(0)
-                    .orElseGet(() -> memtypeRepository.save(
-                            MemtypeEntity.builder().mtcode(0).mtname("일반").build()
-                    ));
+    	    // ✅ FK 준비: LOGINMETHOD(KAKAO/NAVER), MEMTYPE(일반=mtcode 0)
+    	    LoginmethodEntity lm = loginmethodRepository.findByLmtype(providerUpper)
+    	            .orElseGet(() -> loginmethodRepository.save(
+    	                    LoginmethodEntity.builder().lmtype(providerUpper).build()
+    	            ));
 
-            String randomPwHash = passwordEncoder.encode(UUID.randomUUID().toString());
+    	    MemtypeEntity mt = memtypeRepository.findByMtcode(0)
+    	            .orElseGet(() -> memtypeRepository.save(
+    	                    MemtypeEntity.builder().mtcode(0).mtname("일반").build()
+    	            ));
 
-            MemberEntity created = MemberEntity.builder()
-            	    .mid(mid)
-            	    .mpw(randomPwHash)
-            	    .mname(displayName != null ? displayName : providerUpper + "사용자")
-            	    .memail(email)                  // null 허용 가능
-            	    .mtel(telFinal)                 // 없으면 "00000000000"으로 보정됨
-            	    .maddr("SOCIAL_SIGNUP")         // ✅ NOT NULL 회피: 공백/빈문자 금지
-            	    .mpost(0L)                      // ✅ 숫자형이면 0L, 문자형이면 "00000" 등으로
-            	    .loginmethod(lm)
-            	    .memtype(mt)
-            	    .build();
-            return memberRepository.save(created);
-        });
-        
-        
-     // 세션 로그인
-        session.setAttribute("sid", member.getMid());
+    	    // ✅ NOT NULL 보호값(랜덤 비번, 기본 주소/전화/우편)
+    	    String randomPwHash = passwordEncoder.encode(UUID.randomUUID().toString());
+    	    String safeName  = (displayName != null && !displayName.isBlank()) ? displayName : (providerUpper + "사용자");
+    	    String safeTel   = telFinal;
+    	    String safeAddr  = "SOCIAL_SIGNUP";
+    	    Long   safePost  = 0L; // 문자열 컬럼이면 "00000" 사용
 
-        // ✅ 프로필 미완성 여부 계산
-        boolean telMissing   = (member.getMtel() == null || member.getMtel().isBlank() || "00000000000".equals(member.getMtel()));
-        boolean addrMissing  = (member.getMaddr() == null || member.getMaddr().isBlank() || "SOCIAL_SIGNUP".equals(member.getMaddr()));
+    	    // ✅ 항상 새 INSERT (DELETED 이력 무시) + 상태 명시
+    	    MemberEntity created = MemberEntity.builder()
+    	            .mid(mid)
+    	            .mpw(randomPwHash)
+    	            .mname(safeName)
+    	            .memail(email)
+    	            .mtel(safeTel)
+    	            .maddr(safeAddr)
+    	            .mpost(safePost)
+    	            .memstatus(MemberEntity.MemStatus.ACTIVE)
+    	            .loginmethod(lm)   // LMNUM FK
+    	            .memtype(mt)       // MTNUM FK
+    	            .build();
 
-        // mpost 타입에 맞춰 체크 (숫자형 예시)
-        boolean postMissing  = (member.getMpost() == null || member.getMpost() == 0L);
+    	    MemberEntity member = memberRepository.save(created);
 
-        // // 만약 mpost가 문자열이라면 위 줄 대신 ↓
-        // boolean postMissing  = (member.getMpost() == null || member.getMpost().isBlank() || "00000".equals(member.getMpost()));
+    	    // 세션 로그인
+    	    session.setAttribute("sid", member.getMid());
 
-        boolean profileIncomplete = telMissing || addrMissing || postMissing;
+    	    // 프로필 미완성 여부(프론트 안내용)
+    	    boolean telMissing  = (member.getMtel() == null || member.getMtel().isBlank() || "00000000000".equals(member.getMtel()));
+    	    boolean addrMissing = (member.getMaddr() == null || member.getMaddr().isBlank() || "SOCIAL_SIGNUP".equals(member.getMaddr()));
+    	    boolean postMissing = (member.getMpost() == null || member.getMpost() == 0L);
+    	    boolean profileIncomplete = telMissing || addrMissing || postMissing;
 
-        return ResponseEntity.ok(Map.of(
-            "login", true,
-            "mid", member.getMid(),
-            "name", member.getMname(),
-            "email", member.getMemail(),
-            // ✅ 프론트에서 바로 사용
-            "profileIncomplete", profileIncomplete,
-            "missing", Map.of(
-                "tel", telMissing,
-                "addr", addrMissing,
-                "post", postMissing
-            )
-        ));
+    	    return ResponseEntity.ok(Map.of(
+    	        "login", true,
+    	        "mid", member.getMid(),
+    	        "name", member.getMname(),
+    	        "email", member.getMemail(),
+    	        "profileIncomplete", profileIncomplete,
+    	        "missing", Map.of(
+    	            "tel", telMissing,
+    	            "addr", addrMissing,
+    	            "post", postMissing
+    	        )
+    	    ));
+    	}
 
-    }
 
     @GetMapping(value = "/me", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> me(HttpSession session) {

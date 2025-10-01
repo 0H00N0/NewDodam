@@ -38,7 +38,7 @@ public class First {
     private String cTNum;   // FK: 쿠폰타입
 
     @Column(name = "fDate", nullable = false)
-    private LocalDateTime fDate;   // 참여 일시
+    private LocalDateTime fdate;   // 참여 일시
 
     @Column(name = "orderNum")
     private Integer orderNum;   // 몇 번째 참여인지

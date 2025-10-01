@@ -11,4 +11,9 @@ import com.dodam.plan.Entity.PlansEntity;
 public interface PlanBenefitRepository extends JpaRepository<PlanBenefitEntity, Long>{
 	Optional<PlanBenefitEntity> findFirstByPlan(PlansEntity plan);
 	List<PlanBenefitEntity> findByPlanIn(List<PlansEntity> plans);
+	// PlanBenefitRepository
+	List<PlanBenefitEntity> findByPlan_PlanId(Long planId);
+	// PlanBenefitRepository
+	void deleteByPlan_PlanId(Long planId);
 }
+

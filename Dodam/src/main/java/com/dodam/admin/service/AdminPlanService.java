@@ -102,7 +102,7 @@ public class AdminPlanService {
         }
         // 자식 테이블(가격, 혜택 등)의 데이터를 먼저 삭제
         planPriceRepository.deleteByPlan_PlanId(planId);
-        planBenefitRepository.deleteByPlan_PlanId(planId);
+        planBenefitRepository.deleteByPlan_PlanId(planId); 
         plansRepository.deleteById(planId);
     }
 
@@ -172,4 +172,5 @@ public class AdminPlanService {
                 .benefits(benefitDtos) // 혜택 정보 포함
                 .build();
     }
+    
 }

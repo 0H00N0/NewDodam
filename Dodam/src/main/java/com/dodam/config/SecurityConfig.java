@@ -1,4 +1,3 @@
-
 package com.dodam.config;
 
 import lombok.RequiredArgsConstructor;
@@ -32,7 +31,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-        	// CORS
+           // CORS
             .cors(cors -> cors.configurationSource(corsSource()))
             // CSRF: 상태변경 엔드포인트만 예외
             .csrf(csrf -> csrf.ignoringRequestMatchers(
@@ -44,6 +43,7 @@ public class SecurityConfig {
                 "/member/changePw",
                 "/member/changePwDirect",
                 "/member/signup",
+                "/member/delete",
                 "/webhooks/pg",
                 // ✅ 결제/구독/빌링키 전부 예외 처리
                 "/payments/**",
@@ -54,8 +54,11 @@ public class SecurityConfig {
                 "/events/**",
                 "/admin/**",
                 "/board/**",
-                "/api/boards/**",
-                "/pg/**"
+                "/pg/**",
+                "/api/products/new", 
+                "/api/products/popular",
+                "/api/reviews/count",
+                "/api/products/**"
             ))
             // 인가
             .authorizeHttpRequests(auth -> auth
@@ -85,7 +88,8 @@ public class SecurityConfig {
                 .requestMatchers("/admin/**").permitAll()
                 .requestMatchers("/events/**").permitAll()
                 .requestMatchers("/board/**").permitAll()
-                .requestMatchers("/api/boards/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/products/new", "/api/products/popular").permitAll()
+                .requestMatchers("/api/products/**", "/api/reviews/count").permitAll()
                 .anyRequest().permitAll()
             )
             // 세션 기반
@@ -106,7 +110,7 @@ public class SecurityConfig {
         ));
         c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
-        c.setExposedHeaders(List.of("Authorization", "Set-Cookie")); // 필요시 노출헤더;
+        // 필요시 노출헤더: c.setExposedHeaders(List.of("Set-Cookie"));
 
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);
