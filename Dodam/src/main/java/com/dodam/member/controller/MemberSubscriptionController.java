@@ -72,6 +72,7 @@ public class MemberSubscriptionController {
         	    })
         	    .collect(Collectors.toList()); // JDK 버전 상관없이 안전
 
+        
         return ResponseEntity.ok(result);
     }
 }
