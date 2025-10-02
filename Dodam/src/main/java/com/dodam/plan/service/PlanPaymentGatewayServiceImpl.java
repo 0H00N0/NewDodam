@@ -86,17 +86,18 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
                 JsonNode node = findPaymentNode(root, target);
 
                 receiptUrl = firstNonBlank(
-                        get(root, "receiptUrl"),
-                        get(root, "receipt", "url"),
-                        get(root, "urls", "receipt"),
-                        get(root, "transactions") != null && root.path("transactions").isArray() && root.path("transactions").size() > 0
-                                ? get(root.path("transactions").get(0), "receiptUrl") : null,
-                        get(node, "receiptUrl"),
-                        get(node, "receipt", "url"),
-                        get(node, "urls", "receipt"),
-                        get(node, "transactions") != null && node.path("transactions").isArray() && node.path("transactions").size() > 0
-                                ? get(node.path("transactions").get(0), "receiptUrl") : null
-                );
+                	    get(root, "receiptUrl"),
+                	    get(root, "receipt", "url"),
+                	    get(root, "urls", "receipt"),
+                	    // transactions 배열 0번
+                	    (root.has("transactions") && root.get("transactions").isArray() && root.get("transactions").size() > 0)
+                	        ? get(root.get("transactions").get(0), "receiptUrl") : null,
+                	    get(node, "receiptUrl"),
+                	    get(node, "receipt", "url"),
+                	    get(node, "urls", "receipt"),
+                	    (node.has("transactions") && node.get("transactions").isArray() && node.get("transactions").size() > 0)
+                	        ? get(node.get("transactions").get(0), "receiptUrl") : null
+                	);
             }
         } catch (Exception ignore) {}
 

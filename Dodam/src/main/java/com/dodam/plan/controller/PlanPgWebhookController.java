@@ -1,97 +1,111 @@
+// src/main/java/com/dodam/plan/controller/PlanPgWebhookController.java
 package com.dodam.plan.controller;
 
-import com.dodam.plan.webhook.PlanWebhookProcessingService;
-import com.dodam.plan.webhook.PlanWebhookSignVerifier;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.dodam.plan.config.PlanPortoneProperties;
+import com.dodam.plan.webhook.PlanWebhookProcessingService; // ← 네가 올린 서비스 그대로 사용
+import io.portone.sdk.server.webhook.*;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Locale;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
 @RestController
-@RequestMapping("/webhooks/pg")
 @RequiredArgsConstructor
+@RequestMapping("/webhooks")
 public class PlanPgWebhookController {
 
-    private final PlanWebhookSignVerifier signVerifier;
-    private final PlanWebhookProcessingService processingService;
+    private final PlanPortoneProperties props;                // portone.webhookSecret 사용
+    private final PlanWebhookProcessingService processingSvc; // 네 서비스 (@Service, process(...))
 
-    private static final JsonMapper M = JsonMapper.builder().build();
+    @PostMapping("/pg")
+    public ResponseEntity<?> handlePortoneWebhook(
+            HttpServletRequest request,
+            @RequestBody(required = false) String rawBody
+    ) {
+        // 1) 헤더 맵 수집
+        Map<String, String> headers = new HashMap<>();
+        Enumeration<String> names = request.getHeaderNames();
+        while (names != null && names.hasMoreElements()) {
+            String name = names.nextElement();
+            headers.put(name, request.getHeader(name));
+        }
 
-    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> handle(@RequestHeader Map<String, String> headers,
-                                    @RequestBody String raw) {
+        // 2) 서명 검증
+        String secret = props.getWebhookSecret(); // 반드시 whsec_... 키 (API v2 secret와 다름)
+        Webhook webhook;
         try {
-            // 1) 서명 검증 (Webhook-Signature: v1,<base64>)
-            if (!signVerifier.verify(headers, raw)) {
-                log.warn("[WEBHOOK] invalid signature. headers={}", headers);
-                // 보안상 401로 거절할 수도 있지만, 재시도폭주를 피하려면 200으로 흡수해도 무방
-                return ResponseEntity.ok().body("invalid signature");
+            WebhookVerifier verifier = new WebhookVerifier(secret);
+            webhook = verifier.verify(
+                    rawBody == null ? "" : rawBody,
+                    headers.get(WebhookVerifier.HEADER_ID),
+                    headers.get(WebhookVerifier.HEADER_SIGNATURE),
+                    headers.get(WebhookVerifier.HEADER_TIMESTAMP)
+            );
+        } catch (Exception ex) {
+            log.warn("[WEBHOOK] verify failed: {}", ex.toString());
+            return ResponseEntity.badRequest().body("invalid signature");
+        }
+
+        // 3) 이벤트 타입별로 분기하여 기존 서비스 호출 (PAID/FAILED/PENDING 등)
+        try {
+            if (webhook instanceof WebhookTransactionPaid paid) {
+                var d = paid.getData(); // WebhookTransactionDataPaid
+                String paymentId = safe(d.getPaymentId());
+                String txId      = safe(d.getTransactionId());
+                String status    = "PAID";
+                log.info("[WEBHOOK] Transaction.Paid paymentId={}, txId={}", paymentId, txId);
+                processingSvc.process("Transaction.Paid", paymentId, txId, status, rawBody == null ? "" : rawBody);
+
+            } else if (webhook instanceof WebhookTransactionFailed failed) {
+                var d = failed.getData(); // WebhookTransactionDataFailed
+                String paymentId = safe(d.getPaymentId());
+                String txId      = safe(d.getTransactionId());
+                String status    = "FAILED";
+                log.info("[WEBHOOK] Transaction.Failed paymentId={}, txId={}", paymentId, txId);
+                processingSvc.process("Transaction.Failed", paymentId, txId, status, rawBody == null ? "" : rawBody);
+
+            } else if (webhook instanceof WebhookTransactionPayPending pending) {
+                var d = pending.getData(); // WebhookTransactionDataPayPending
+                String paymentId = safe(d.getPaymentId());
+                String txId      = safe(d.getTransactionId());
+                String status    = "PENDING";
+                log.info("[WEBHOOK] Transaction.PayPending paymentId={}, txId={}", paymentId, txId);
+                processingSvc.process("Transaction.PayPending", paymentId, txId, status, rawBody == null ? "" : rawBody);
+
+            } else if (webhook instanceof WebhookTransactionReady ready) {
+                var d = ready.getData(); // WebhookTransactionDataReady
+                String paymentId = safe(d.getPaymentId());
+                String txId      = safe(d.getTransactionId());
+                String status    = "READY";
+                log.info("[WEBHOOK] Transaction.Ready paymentId={}, txId={}", paymentId, txId);
+                processingSvc.process("Transaction.Ready", paymentId, txId, status, rawBody == null ? "" : rawBody);
+
+            } else if (webhook instanceof WebhookTransactionCancelledCancelled cancelled) {
+                var d = cancelled.getData(); // ...Cancelled Data
+                String paymentId = safe(d.getPaymentId());
+                String txId      = safe(d.getTransactionId());
+                String status    = "CANCELLED";
+                log.info("[WEBHOOK] Transaction.Cancelled paymentId={}, txId={}", paymentId, txId);
+                processingSvc.process("Transaction.Cancelled", paymentId, txId, status, rawBody == null ? "" : rawBody);
+
+            } else {
+                // 인식 못한 타입: 스킵(하지만 200 반환)
+                log.info("[WEBHOOK] Unrecognized/Unhandled webhook type: {}", webhook.getClass().getSimpleName());
             }
 
-            // 2) 최소한의 파싱만 하고 즉시 비동기 처리 위임
-            JsonNode root = M.readTree(raw);
-
-            // 이벤트/결제ID/트랜잭션ID/상태 추출(없어도 괜찮게 설계 – 비동기에서 재파싱/조회함)
-            String type        = asText(root, "event", "type");
-            String paymentId   = firstNonBlank(
-                    asText(root, "paymentId", "payment_id", "id", "payment.id"),
-                    // 일부 페이로드는 data.payment.id 형태
-                    asText(root.path("data").path("payment"), "id", "paymentId", "payment_id")
-            );
-            String transaction = firstNonBlank(
-                    asText(root, "transactionUid", "transaction_uid", "tx_id"),
-                    asText(root.path("data").path("payment"), "txId", "transactionId", "transaction_id")
-            );
-            String status      = firstNonBlank(
-                    asText(root, "status", "payment.status", "pay.status"),
-                    asText(root.path("data").path("payment"), "status")
-            );
-
-            log.info("[WEBHOOK] enqueue type={}, paymentId={}, txId={}, status={}", type, paymentId, transaction, status);
-            processingService.process(type, paymentId, transaction, status, raw); // ★ 비동기
-
-            // 3) 절대 지연 없이 OK 반환
-            return ResponseEntity.ok("ok");
         } catch (Exception e) {
-            log.error("[WEBHOOK] error", e);
-            // 에러여도 200으로 받아주고 내부 알람으로 처리해도 됨
-            return ResponseEntity.ok("ok");
+            // 비즈니스 예외는 200으로 마감(포트원 재시도 폭주 방지). 내부에서 재처리.
+            log.error("[WEBHOOK] dispatch error", e);
         }
+
+        return ResponseEntity.ok().build(); // 검증 성공 시 항상 2xx
     }
 
-    /* -------------- helpers (controller 경량 파서) -------------- */
-
-    private static String asText(JsonNode root, String... keys) {
-        if (root == null || keys == null) return null;
-        for (String k : keys) {
-            JsonNode n = getByDotted(root, k);
-            if (n != null && !n.isMissingNode() && !n.isNull() && n.isValueNode()) {
-                String v = n.asText(null);
-                if (StringUtils.hasText(v)) return v;
-            }
-        }
-        return null;
-    }
-    private static JsonNode getByDotted(JsonNode root, String dotted) {
-        String[] parts = dotted.split("\\.");
-        JsonNode cur = root;
-        for (String p : parts) {
-            if (cur == null) return null;
-            cur = cur.get(p);
-        }
-        return cur;
-    }
-    private static String firstNonBlank(String... v){
-        if (v == null) return null;
-        for (String s : v) if (StringUtils.hasText(s)) return s;
-        return null;
-    }
+    private static String safe(String s) { return s == null ? "" : s; }
 }

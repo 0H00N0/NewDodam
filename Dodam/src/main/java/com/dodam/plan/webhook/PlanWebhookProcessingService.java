@@ -38,7 +38,7 @@ public class PlanWebhookProcessingService {
      * - 안전 조회(safeLookup)로 status/receiptUrl/payKey/카드메타 보강
      * - recordAttempt() 호출 + 인보이스 상태 전이
      */
-    @Async("pgWebhookExecutor")
+    @Async("webhookExecutor")
     @Transactional
     public void process(String type, String paymentId, String transactionId, String status, String rawBody) {
         try {
@@ -225,4 +225,6 @@ public class PlanWebhookProcessingService {
         if (digits.length() >= 4) return digits.substring(digits.length() - 4);
         return null;
     }
+    
+    
 }
