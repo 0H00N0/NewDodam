@@ -82,4 +82,21 @@ public class BoardManagementController {
         BoardManagementDTO.PostDetailResponse createdPost = boardManagementService.createPost(requestDto);
         return new ResponseEntity<>(createdPost, HttpStatus.CREATED);
     }
+ // --- 카테고리 수정 ---
+    @PutMapping("/{categoryId}")
+    public ResponseEntity<BoardManagementDTO.BoardCategoryResponse> updateBoardCategory(
+            @PathVariable("categoryId") Long categoryId,              // ← 이름 명시!
+            @RequestBody BoardManagementDTO.UpdateBoardCategoryRequest requestDto) {
+        return ResponseEntity.ok(boardManagementService.updateBoardCategory(categoryId, requestDto));
+    }
+
+ // --- 게시글 수정 API ---
+    @PutMapping("/posts/{postId}")
+    public ResponseEntity<BoardManagementDTO.PostDetailResponse> updatePost(
+            @PathVariable("postId") Long postId,   // <-- 명시적으로 이름 지정
+            @RequestBody BoardManagementDTO.UpdatePostRequest requestDto) {
+        return ResponseEntity.ok(boardManagementService.updatePost(postId, requestDto));
+    }
+
+
 }

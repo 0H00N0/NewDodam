@@ -110,4 +110,26 @@ public class BoardManagementDTO {
         private String title;
         private String content;
     }
+    /**
+     * 게시판 카테고리 수정 요청 DTO
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class UpdateBoardCategoryRequest {
+        private String name;
+    }
+
+    /**
+     * 게시글 수정 요청 DTO
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    public static class UpdatePostRequest {
+        private String title;
+        private String content;
+        private Long categoryId; // 카테고리 변경 가능
+        private Long stateId;    // 상태(활성/비활성/폐쇄) 변경 가능
+    }
 }
