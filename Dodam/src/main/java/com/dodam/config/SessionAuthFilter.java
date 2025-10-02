@@ -22,7 +22,7 @@ public class SessionAuthFilter extends OncePerRequestFilter {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             HttpSession session = req.getSession(false);
             if (session != null) {
-                Object sid  = session.getAttribute("sid");   // 로그인한 사용자 아이디
+                Object sid  = session.getAttribute("mid");   // 로그인한 사용자 아이디
                 Object role = session.getAttribute("role");  // ROLE_ADMIN / ROLE_USER
                 System.out.println(">>> SessionAuthFilter sid=" + sid + ", role=" + role);
 

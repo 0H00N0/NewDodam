@@ -45,7 +45,7 @@ public class MemberController {
         MemberDTO member = memberService.login(dto.getMid(), dto.getMpw()); // MemberDTO 반환
 
         // 세션에 사용자 아이디 저장
-        session.setAttribute("sid", member.getMid());
+        session.setAttribute("mid", member.getMid());
 
         // memtype → role 매핑
         String role = "ROLE_USER";
