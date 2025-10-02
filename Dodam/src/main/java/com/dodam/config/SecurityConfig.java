@@ -55,7 +55,8 @@ public class SecurityConfig {
                 "/api/products/popular",
                 "/api/reviews/count",
                 "/api/products/**",
-                "/admin/**" 
+                "/admin/**", 
+                "/cart"
             ))
             // 인가 정책
             .authorizeHttpRequests(auth -> auth
