@@ -57,9 +57,15 @@ public class ProductController {
         productService.delete(pronum);
     }
     
-    @GetMapping("/api/products/category/{categoryName}")
-    public List<ProductDTO> getByCategory(@PathVariable String categoryName) {
-        return productService.findByCategoryName(categoryName);
+    @GetMapping("/category/{categoryName}")
+    public ResponseEntity<?> getByCategory(@PathVariable("categoryName") String categoryName) {
+        System.out.println(">>> getByCategory called: " + categoryName);
+        try {
+            return ResponseEntity.ok(productService.findByCategoryName(categoryName));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
     
     
