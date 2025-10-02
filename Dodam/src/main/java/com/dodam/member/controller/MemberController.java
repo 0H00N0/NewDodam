@@ -35,20 +35,35 @@ public class MemberController {
                 .body(Map.of("message", "signup ok"));
     }
 
-    // 프론트 규약: /member/loginForm  (JSON)
+    // ✅ 로그인: 세션에 sid + role 저장 (mtcode=1 → ROLE_ADMIN, 그 외 → ROLE_USER)
     @PostMapping(
             value = "/loginForm",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<?> login(@RequestBody MemberDTO dto, HttpSession session) {
-        var member = memberService.login(dto.getMid(), dto.getMpw()); // 실패 시 예외
-        session.setAttribute("sid", member.getMid()); // React axios withCredentials=true 일 때 JSESSIONID 쿠키 저장
+        MemberDTO member = memberService.login(dto.getMid(), dto.getMpw()); // MemberDTO 반환
+
+        // 세션에 사용자 아이디 저장
+        session.setAttribute("sid", member.getMid());
+
+        // memtype → role 매핑
+        String role = "ROLE_USER";
+        if (member.getRoleCode() != null && member.getRoleCode() == 1L) {
+            role = "ROLE_ADMIN";
+        }
+        session.setAttribute("role", role);
+        System.out.println(">>> login success mid=" + member.getMid() +
+                ", roleCode=" + member.getRoleCode() +
+                ", role=" + role);
+
         return ResponseEntity.ok(Map.of(
                 "message", "login ok",
                 "mid", member.getMid(),
-                "mname", member.getMname()
+                "mname", member.getMname(),
+                "role", role
         ));
+        
     }
 
     // (선택) 로그아웃

@@ -35,7 +35,6 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsSource()))
             // CSRF: 상태변경 엔드포인트만 예외
             .csrf(csrf -> csrf.ignoringRequestMatchers(
-                // 기존
                 "/oauth/**",
                 "/member/loginForm",
                 "/member/logout",
@@ -45,51 +44,47 @@ public class SecurityConfig {
                 "/member/signup",
                 "/member/delete",
                 "/webhooks/pg",
-                // ✅ 결제/구독/빌링키 전부 예외 처리
                 "/payments/**",
                 "/subscriptions/**",
                 "/billing-keys/**",
                 "/pg/payments/**",
                 "/pg/transactions/**",
                 "/events/**",
-                "/admin/**",
-                "/board/**",
                 "/pg/**",
                 "/api/products/new", 
                 "/api/products/popular",
                 "/api/reviews/count",
-                "/api/products/**"
+                "/api/products/**",
+                "/admin/**" 
             ))
-            // 인가
+            // 인가 정책
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/member/**").permitAll()
                 .requestMatchers("/webhooks/pg").permitAll()
-                .requestMatchers(HttpMethod.POST, "/webhooks/pg").permitAll()
                 .requestMatchers("/payments/**").permitAll()
-                .requestMatchers("/pg/payments/**").permitAll()
                 .requestMatchers("/pg/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/pg/payments/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/pg/transactions/**").permitAll()
                 .requestMatchers("/subscriptions/**").permitAll()
                 .requestMatchers("/billing-keys/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/billing-keys/confirm", "/billing-keys/register").permitAll()
-                .requestMatchers(HttpMethod.GET,  "/billing-keys/list").permitAll()
-                .requestMatchers("/sub/**").authenticated()
-                .requestMatchers("/pg/**").authenticated()
                 .requestMatchers("/static/**").permitAll()
                 .requestMatchers("/oauth/**").permitAll()
                 .requestMatchers("/favicon.ico").permitAll()
-                .requestMatchers("/member/signup").permitAll()
-                .requestMatchers("/member/loginForm").permitAll()
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
-                .requestMatchers("/admin/**").permitAll()
                 .requestMatchers("/events/**").permitAll()
-                .requestMatchers("/board/**").permitAll()
+
+                // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
+                .requestMatchers("/board/**").authenticated()
+
+                // ✅ 관리자 전용
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+
+                // 상품/리뷰 등 공개 API
                 .requestMatchers(HttpMethod.GET, "/api/products/new", "/api/products/popular").permitAll()
                 .requestMatchers("/api/products/**", "/api/reviews/count").permitAll()
+
+                // 그 외 기본은 전부 허용
                 .anyRequest().permitAll()
             )
             // 세션 기반
@@ -103,15 +98,13 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
-        c.setAllowCredentials(true); // axios withCredentials:true 매칭
+        c.setAllowCredentials(true); 
         c.setAllowedOrigins(List.of(
-            front,                      // ex) http://localhost:3000
+            front,
             "http://127.0.0.1:3000"
         ));
         c.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
-        // 필요시 노출헤더: c.setExposedHeaders(List.of("Set-Cookie"));
-
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);
         return src;

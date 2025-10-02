@@ -49,4 +49,16 @@ public class BoardEntity {
 
     @Column(name = "mnic", nullable = false, length = 255)
     private String mnic;
+    
+ // ✅ 자동 날짜 세팅
+    @PrePersist
+    public void onCreate() {
+        this.bdate = LocalDateTime.now();
+        this.bedate = LocalDateTime.now(); // 수정일도 초기값
+    }
+
+    @PreUpdate
+    public void onUpdate() {
+        this.bedate = LocalDateTime.now();
+    }
 }

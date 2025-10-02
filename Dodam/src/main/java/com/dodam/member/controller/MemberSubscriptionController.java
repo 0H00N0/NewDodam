@@ -40,7 +40,11 @@ public class MemberSubscriptionController {
 
             if (pm.getPlan()!=null) {
                 m.put("planCode", pm.getPlan().getPlanCode());
-                m.put("planName", pm.getPlan().getPlanName());
+                m.put("planName",
+                	    pm.getPlan() != null && pm.getPlan().getPlanName() != null
+                	        ? pm.getPlan().getPlanName().getPlanName()   // ✅ 문자열만 담기
+                	        : null
+                	);
             } else { m.put("planCode", null); m.put("planName", null); }
 
             Integer termMonth = pm.getTerms()!=null ? pm.getTerms().getPtermMonth() : null;
