@@ -191,4 +191,24 @@ public class ProductService {
         }
         imageRepo.saveAll(byOrder.values());
     }
+    
+    //카테고리 조희
+    @Transactional(readOnly = true)
+    public List<ProductDTO> findByCategoryName(String categoryName) {
+        // 1. 카테고리 이름으로 카테고리 엔티티 조회
+        CategoryEntity category = categoryRepo.findAll().stream()
+            .filter(cat -> categoryName.equals(cat.getCatename()))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("category not found: " + categoryName));
+
+        // 2. 해당 카테고리의 상품 목록 조회
+        List<ProductEntity> products = productRepo.findByCategory(category);
+
+        // 3. 엔티티 → DTO 변환
+        List<ProductDTO> dtos = new ArrayList<>();
+        for (ProductEntity p : products) {
+            dtos.add(toDTO(p, true));
+        }
+        return dtos;
+    }
 }

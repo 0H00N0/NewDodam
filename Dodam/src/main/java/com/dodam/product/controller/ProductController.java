@@ -3,6 +3,9 @@ package com.dodam.product.controller;
 import com.dodam.product.dto.ProductDTO;
 import com.dodam.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
+
+import java.util.List;
+
 import org.springframework.data.domain.*;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +55,11 @@ public class ProductController {
     @DeleteMapping("/{pronum}")
     public void delete(@PathVariable("pronum") Long pronum) {
         productService.delete(pronum);
+    }
+    
+    @GetMapping("/api/products/category/{categoryName}")
+    public List<ProductDTO> getByCategory(@PathVariable String categoryName) {
+        return productService.findByCategoryName(categoryName);
     }
     
     
