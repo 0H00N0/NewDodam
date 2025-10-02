@@ -11,6 +11,7 @@ import com.dodam.member.repository.ChildRepository;
 import com.dodam.member.repository.LoginmethodRepository;
 import com.dodam.member.repository.MemberRepository;
 import com.dodam.member.repository.MemtypeRepository;
+import com.dodam.member.entity.MemberEntity;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -238,6 +239,13 @@ public class MemberService {
         m.setDeletedReason((reasonOrNull != null && !reasonOrNull.isBlank()) ? reasonOrNull.trim() : null);
 
         memberRepository.save(m);
+    }
+    
+    //mid로 회원번호 탐색
+    public Long findMnumByMid(String mid) {
+        return memberRepository.findByMid(mid)
+            .map(MemberEntity::getMnum)
+            .orElse(null);
     }
 
 }

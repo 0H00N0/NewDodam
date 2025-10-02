@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
 import lombok.*;
 
@@ -14,8 +15,13 @@ import lombok.*;
 @Getter @Setter @Builder
 @NoArgsConstructor @AllArgsConstructor
 public class CartEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+	@Id
+	@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "cart_seq")
+	@SequenceGenerator(
+	    name = "cart_seq",
+	    sequenceName = "DODAM.ISEQ$$_156512", // 실제 시퀀스명
+	    allocationSize = 1
+	)
     private Long cartnum; // PK
 
     @Column(nullable = false)

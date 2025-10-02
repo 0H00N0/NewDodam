@@ -114,4 +114,43 @@ public class BoardManagementService {
         BoardEntity savedPost = boardRepository.save(newPost);
         return BoardManagementDTO.PostDetailResponse.fromEntity(savedPost);
     }
+ // --- 카테고리 수정 ---
+    @Transactional
+    public BoardManagementDTO.BoardCategoryResponse updateBoardCategory(Long categoryId, BoardManagementDTO.UpdateBoardCategoryRequest requestDto) {
+        BoardCategoryEntity category = boardCategoryRepository.findById(categoryId)
+                .orElseThrow(() -> new EntityNotFoundException("카테고리를 찾을 수 없습니다: " + categoryId));
+
+        category.setBcaname(requestDto.getName()); // 새 이름 반영
+        BoardCategoryEntity updated = boardCategoryRepository.save(category);
+
+        return BoardManagementDTO.BoardCategoryResponse.fromEntity(updated);
+    }
+
+    // --- 게시글 수정 ---
+    @Transactional
+    public BoardManagementDTO.PostDetailResponse updatePost(Long postId, BoardManagementDTO.UpdatePostRequest requestDto) {
+        BoardEntity post = boardRepository.findById(postId)
+                .orElseThrow(() -> new EntityNotFoundException("게시글을 찾을 수 없습니다: " + postId));
+
+        // 제목/내용 변경
+        post.setBsub(requestDto.getTitle());
+        post.setBcontent(requestDto.getContent());
+
+        // 카테고리 변경 가능하도록
+        if (requestDto.getCategoryId() != null) {
+            BoardCategoryEntity category = boardCategoryRepository.findById(requestDto.getCategoryId())
+                    .orElseThrow(() -> new EntityNotFoundException("카테고리를 찾을 수 없습니다: " + requestDto.getCategoryId()));
+            post.setBoardCategory(category);
+        }
+
+        // 상태 변경 가능하도록
+        if (requestDto.getStateId() != null) {
+            BoardStateEntity state = boardStateRepository.findById(requestDto.getStateId())
+                    .orElseThrow(() -> new EntityNotFoundException("게시글 상태를 찾을 수 없습니다: " + requestDto.getStateId()));
+            post.setBoardState(state);
+        }
+
+        BoardEntity updatedPost = boardRepository.save(post);
+        return BoardManagementDTO.PostDetailResponse.fromEntity(updatedPost);
+    }
 }

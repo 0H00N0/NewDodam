@@ -1,31 +1,40 @@
 package com.dodam.board.dto;
+
 import java.time.LocalDateTime;
-
 import com.dodam.board.entity.BoardEntity;
-
 import lombok.*;
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class BoardDto { 
-	private String code; 
-	private String name; 
-	private String description; 
-	private Long id;
-    private String title;
-    private String content;
-    private String author;
-    private Boolean isActive;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    
-    public static BoardDto from(BoardEntity e) {
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class BoardDto {
+    private Long bnum;
+    private Long mnum;
+    private Long mtnum;
+    private String bcanum;
+    private String bsnum;
+    private String bsub;
+    private String bcontent;
+    private String mid;
+    private String mnic;
+    private LocalDateTime bdate;
+    private LocalDateTime bedate;
+
+    public static BoardDto from(BoardEntity entity) {
         return BoardDto.builder()
-                .code(e.getCode())
-                .title(e.getBtitle())
-                .content(e.getBcontent())
-                .author(e.getMnic())
-                .createdAt(e.getBdate())
-                .updatedAt(e.getBedate())
-                .id(e.getBnum())  
-                .build();
+                .bnum(entity.getBnum())
+                .mnum(entity.getMnum())
+                .mtnum(entity.getMtnum())
+                .bcanum(entity.getBoardCategory() != null ? entity.getBoardCategory().getBcanum() : null)
+                .bsnum(entity.getBoardState() != null ? entity.getBoardState().getBsnum() : null)
+                .bsub(entity.getBsub())
+                .bcontent(entity.getBcontent())
+                .mid(entity.getMid())
+                .mnic(entity.getMnic())
+                .bdate(entity.getBdate())
+                .bedate(entity.getBedate())
+                .build();        
     }
 }
