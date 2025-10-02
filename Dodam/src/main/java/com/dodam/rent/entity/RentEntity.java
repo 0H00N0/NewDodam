@@ -1,10 +1,9 @@
-	package com.dodam.rent.entity;
+package com.dodam.rent.entity;
 
 import com.dodam.member.entity.MemberEntity;
 import com.dodam.product.entity.ProductEntity;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDateTime;
 
@@ -15,7 +14,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RentEntity { //대여 테이블
+public class RentEntity { // 대여 테이블
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,43 +30,45 @@ public class RentEntity { //대여 테이블
     private MemberEntity member;
 
     @Column(name = "rendate", nullable = true)
-    private LocalDateTime renDate;
+    private LocalDateTime renDate;   // 대여일
 
     @Column(name = "retdate", nullable = true)
-    private LocalDateTime retDate;
+    private LocalDateTime retDate;   // 반납일
 
-    @Column(name = "renrider")
-    private String renRider;
+    // @Column(name = "renrider", nullable = true)
+    // private String renRider;   // 담당기사 (사용 안 함)
 
-    @Column(name = "renapproval", nullable = false)
-    private Integer renApproval;
+    // @Column(name = "renapproval", nullable = false)
+    // private Integer renApproval;   // 승인 여부 (사용 안 함)
 
+    // 배송 상태 ENUM
+    public enum ShipStatus {
+        SHIPPING,   // 배송중
+        DELIVERED   // 배송완료
+    }
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "renship", nullable = true)
-    private String renShip;
+    private ShipStatus renShip;  // 배송 상태
 
-    @Column(name = "overdue", nullable = true)
-    private Integer overDue; //연체
+    // @Column(name = "overdue", nullable = true)
+    // private Integer overDue; // 연체 (사용 안 함)
 
-    @Column(name = "extend")
-    private Integer extendInfo;
+    // @Column(name = "extend", nullable = true)
+    // private Integer extendInfo; // 연장 횟수 (사용 안 함)
 
-    @Column(name = "renloss")
-    private Integer renLoss;
+    // @Column(name = "renloss", nullable = true)
+    // private Integer renLoss; // 분실/손실 여부 (사용 안 함)
 
-    @Column(name = "restate", nullable = false)
-    private Integer reState;
+    // @Column(name = "restate", nullable = true)
+    // private Integer reState; // 회수 상태 (사용 안 함)
 
-    @Column(name = "trackingnumber")
+    @Column(name = "trackingnumber", nullable = true)
     private String trackingNumber; // 운송장 번호
-    // ▲▲▲▲▲ 소문자/camelCase 필드 추가 ▲▲▲▲▲
 
-    // 데이터 저장 전 기본값 설정
+    // ▲▲▲▲▲ 기본값 세팅 ▲▲▲▲▲
     @PrePersist
     public void setDefaultValues() {
-        if (renApproval == null) renApproval = 0;
-        if (overDue == null) overDue = 0;
-        if (extendInfo == null) extendInfo = 0;
-        if (renLoss == null) renLoss = 0;
-        if (reState == null) reState = 0;
+        if (renShip == null) renShip = ShipStatus.SHIPPING; // 기본 배송 상태
     }
 }
