@@ -1,22 +1,17 @@
-package com.dodam;
+package com.dodam; // ✅ 중요: com.dodam 처럼 최상위여야 하위 전부 스캔됨
 
-import com.dodam.plan.config.PlanPortoneProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 
 @SpringBootApplication
-@EnableConfigurationProperties(PlanPortoneProperties.class) // ✅ properties 빈 등록
+@ComponentScan(basePackages = "com.dodam")          // 서비스/컨트롤러 스캔
+@EnableJpaRepositories(basePackages = "com.dodam")  // 레포지토리 스캔
+@EntityScan(basePackages = "com.dodam")             // 엔티티 스캔
 public class DodamApplication {
-
-	/**
-	 * 애플리케이션의 메인 메소드입니다.
-	 * SpringApplication.run()을 호출하여 Spring 애플리케이션 컨텍스트를 초기화하고 실행합니다.
-	 * @param args 커맨드 라인 인자
-	 */
-	public static void main(String[] args) {
-		SpringApplication.run(DodamApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(DodamApplication.class, args);
+    }
 }
-

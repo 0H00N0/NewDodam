@@ -4,309 +4,392 @@ import com.dodam.plan.Entity.PlanAttemptEntity;
 import com.dodam.plan.Entity.PlanInvoiceEntity;
 import com.dodam.plan.Entity.PlanMember;
 import com.dodam.plan.Entity.PlanPaymentEntity;
-import com.dodam.plan.dto.PlanCardMeta;
+import com.dodam.plan.dto.PlanLookupResult;
 import com.dodam.plan.enums.PlanEnums.PattResult;
-import com.dodam.plan.enums.PlanEnums.PiStatus;
 import com.dodam.plan.repository.PlanAttemptRepository;
 import com.dodam.plan.repository.PlanInvoiceRepository;
 import com.dodam.plan.repository.PlanPaymentRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
-import java.util.Locale;
+import java.util.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
+@Transactional
+@AllArgsConstructor
 public class PlanBillingService {
 
     private final PlanAttemptRepository attemptRepo;
     private final PlanInvoiceRepository invoiceRepo;
     private final PlanPaymentRepository paymentRepo;
-    private final PlanPaymentGatewayService pgSvc;
+    private final PlanPortoneClientService pgSvc;
 
     private static final ObjectMapper OM = new ObjectMapper();
+    private static final int MAX_JSON_LEN = 4000;
+    private static final int MAX_URL_LEN = 1024;
+
+    /** 기존 5-파라미터 호출도 그대로 받도록 유지(호환) */
+    public void recordAttempt(Long invoiceId, boolean isSuccess, String respUid, String receiptUrl, String respJson) {
+        recordAttempt(invoiceId, isSuccess, null, respUid, receiptUrl, respJson);
+    }
 
     /**
-     * 결제 시도 기록 + 인보이스 상태 전이 + (성공 시) 카드메타 안전 업데이트
-     *
-     * 규칙 요약
-     * - success=true            → PattResult.SUCCESS, pattFail=null, 인보이스=PAID
-     * - failReason=ACCEPTED/PENDING → PattResult.FAIL 이지만 pattFail=false (보류), 인보이스=PENDING 유지
-     * - 그 외 명확 실패/취소    → PattResult.FAIL, pattFail=true, 인보이스=FAILED
+     * 통합 기록 메서드(컨트롤러/웹훅/잡 공용)
      */
-    @Transactional
     public void recordAttempt(Long invoiceId,
-                              boolean success,
-                              String failReason,   // "ACCEPTED","PENDING","FAILED" 등
-                              String respUid,      // provider paymentId / txId 등
-                              String receiptUrl,   // 영수증 URL(명시적 전달 시)
-                              String respJson) {   // 게이트웨이 원문 JSON
-        if (log.isDebugEnabled()) {
-            String preview = (respJson == null) ? "null"
-                    : (respJson.length() > 300 ? respJson.substring(0, 300) + "...(truncated)" : respJson);
-            log.debug("[recordAttempt] invoiceId={}, success={}, failReason={}, respUid={}, receiptUrl={}, respJsonPreview={}",
-                    invoiceId, success, failReason, respUid, receiptUrl, preview);
+                              boolean isSuccess,
+                              String statusReason,
+                              String respUid,
+                              String receiptUrl,
+                              String respJson) {
+
+        Objects.requireNonNull(invoiceId, "invoiceId is required");
+
+        PlanInvoiceEntity inv = invoiceRepo.findById(invoiceId)
+                .orElseThrow(() -> new IllegalArgumentException("invoice not found: " + invoiceId));
+
+        // 1) Attempt 저장
+        PlanAttemptEntity att = new PlanAttemptEntity();
+        att.setInvoice(inv);
+        att.setPattResult(resolveResult(isSuccess, statusReason));
+        if (StringUtils.hasText(statusReason)) {
+            att.setPattFail(statusReason);
+        }
+        if (StringUtils.hasText(respUid)) {
+            att.setPattUid(respUid.trim());
+        }
+        if (StringUtils.hasText(receiptUrl)) {
+            att.setPattUrl(cut(receiptUrl.trim(), MAX_URL_LEN));
         }
 
-        // 1) 인보이스 조회
-        PlanInvoiceEntity inv = invoiceRepo.findById(invoiceId)
-                .orElseThrow(() -> new IllegalArgumentException("INVOICE_NOT_FOUND:" + invoiceId));
-
-        // 2) Attempt 저장 (ACCEPTED/PENDING은 '보류'로 기록: enum은 FAIL이지만 pattFail=false)
-        String resolvedReceipt = resolveReceiptUrl(receiptUrl, respJson, respUid);
-
-        final String reasonUC = (failReason == null ? "" : failReason).toUpperCase(Locale.ROOT).trim();
-        // ✅ 대기(보류)로 볼 상태 확장
-        final boolean isPendingLike =
-                "ACCEPTED".equals(reasonUC) ||
-                "PENDING".equals(reasonUC)  ||
-                "READY".equals(reasonUC)    ||
-                "NOT_FOUND".equals(reasonUC)||
-                reasonUC.startsWith("LOOKUP:PENDING") ||
-                reasonUC.startsWith("LOOKUP:NOT_FOUND");
-
-        // 저장 로직은 동일 (성공이면 SUCCESS, 아니면 FAIL이지만 보류 시 pattFail=null)
-        final PattResult pattResult = success ? PattResult.SUCCESS : PattResult.FAIL;
-        final String    pattFailStr = success ? null : (isPendingLike ? null : reasonUC);
-
-        PlanAttemptEntity att = PlanAttemptEntity.builder()
-                .invoice(inv)
-                .pattResult(pattResult)
-                .pattFail(pattFailStr)   // 엔티티가 String(또는 Boolean)이라면 기존 타입에 맞춰 사용하세요
-                .pattUid(respUid)
-                .pattUrl(StringUtils.hasText(resolvedReceipt) ? resolvedReceipt : null)
-                .pattResponse(respJson)
-                .build();
+        String safeJson = sanitizeRespJson(respJson);
+        if (StringUtils.hasText(safeJson)) {
+            att.setPattResponse(cut(safeJson, MAX_JSON_LEN));
+        }
         attemptRepo.save(att);
 
-        log.debug("[recordAttempt] attempt saved: pattId={}, result={}, uid={}, receipt={}",
-                att.getPattId(), att.getPattResult(), att.getPattUid(), att.getPattUrl());
-
-        // 3) 인보이스 상태 전이
-        PiStatus before = inv.getPiStat();
-        if (success) {
-            inv.setPiStat(PiStatus.PAID);
-            inv.setPiPaid(LocalDateTime.now());
-        } else {
-            if (reasonUC.startsWith("LOOKUP:FAILED") || reasonUC.startsWith("LOOKUP:CANCELED") || reasonUC.startsWith("LOOKUP:CANCELLED")
-                    || "FAILED".equals(reasonUC) || "CANCELED".equals(reasonUC) || "CANCELLED".equals(reasonUC)) {
-                inv.setPiStat(PiStatus.FAILED);
-            } else if (isPendingLike) {
-                inv.setPiStat(PiStatus.PENDING); // ✅ 보류 유지
-            } else {
-                // 그 외 모호하면 기존 상태 없을 때만 PENDING으로
-                if (inv.getPiStat() == null) inv.setPiStat(PiStatus.PENDING);
-            }
-        }
-        invoiceRepo.save(inv);
-        log.debug("[recordAttempt] invoice state changed: {} -> {}, piPaid={}", before, inv.getPiStat(), inv.getPiPaid());
-
-        // 4) 카드 메타 저장 (성공시에만, 그리고 인보이스의 PlanMember.payment에 한정)
+        // 2) 카드 메타/영수증 보강 업데이트
         try {
-            if (success && StringUtils.hasText(respJson)) {
-                PlanMember pm = inv.getPlanMember();
-                PlanPaymentEntity targetPayment = (pm != null) ? pm.getPayment() : null;
+            boolean successLike = isPaidLike(safeJson) || isSuccess;
+            if (!successLike) {
+                log.info("[Billing] skip card-meta update (not success-like): inv={}, flag={}, jsonPaid={}",
+                        invoiceId, isSuccess, isPaidLike(safeJson));
+                return;
+            }
 
-                if (targetPayment == null) {
-                    log.warn("[Billing] skip card meta: invoice has no bound payment (invoiceId={})", invoiceId);
-                    return;
-                }
+            // 대상 결제수단 찾기
+            PlanPaymentEntity pay = resolvePaymentEntity(inv, safeJson, respUid);
+            if (pay == null) {
+                log.warn("[Billing] no payment bound (invoiceId={}), skip card-meta update", invoiceId);
+                return;
+            }
 
-                // 게이트웨이 응답에서 billingKey 추출
-                String usedBillingKey = extractBillingKey(respJson);
-                if (log.isDebugEnabled()) log.debug("[recordAttempt] used billingKey from gateway = {}", usedBillingKey);
+            // JSON에서 카드 파편 추출
+            CardPieces pieces = extractCardPiecesFromJson(safeJson);
 
-                // 응답 billingKey와 인보이스 결제수단의 key가 다르면 업데이트 금지
-                if (StringUtils.hasText(usedBillingKey) &&
-                        StringUtils.hasText(targetPayment.getPayKey()) &&
-                        !usedBillingKey.equals(targetPayment.getPayKey())) {
-                    log.warn("[Billing] card meta mismatch -> skip update (invoiceId={}, target.payId={}, target.key={}, resp.key={})",
-                            invoiceId, targetPayment.getPayId(), mask(targetPayment.getPayKey()), mask(usedBillingKey));
-                    return;
-                }
-
-                // 카드 메타 추출 및 보정
-                PlanCardMeta meta = pgSvc.extractCardMeta(respJson);
-                if (log.isDebugEnabled()) log.debug("[recordAttempt] extracted card meta: {}", meta);
-
-                // last4 숫자 보정
-                if (meta != null && StringUtils.hasText(meta.getLast4())) {
-                    String digits = meta.getLast4().replaceAll("\\D", "");
-                    if (digits.length() >= 4) {
-                        meta = new PlanCardMeta(
-                                meta.getBillingKey(),
-                                meta.getBrand(),
-                                meta.getBin(),
-                                digits.substring(digits.length() - 4),
-                                meta.getPg(),
-                                false,
-                                null
-                        );
-                    }
-                }
-
-                boolean changed = false;
-                if (meta != null) {
-                    if (StringUtils.hasText(meta.getBin()) &&
-                            !meta.getBin().equals(targetPayment.getPayBin())) {
-                        targetPayment.setPayBin(meta.getBin());
-                        changed = true;
-                    }
-                    if (StringUtils.hasText(meta.getBrand()) &&
-                            !meta.getBrand().equals(targetPayment.getPayBrand())) {
-                        targetPayment.setPayBrand(meta.getBrand());
-                        changed = true;
-                    }
-                    if (StringUtils.hasText(meta.getLast4()) &&
-                            !meta.getLast4().equals(targetPayment.getPayLast4())) {
-                        targetPayment.setPayLast4(meta.getLast4());
-                        changed = true;
-                    }
-                    if (StringUtils.hasText(meta.getPg()) &&
-                            !meta.getPg().equals(targetPayment.getPayPg())) {
-                        targetPayment.setPayPg(meta.getPg());
-                        changed = true;
-                    }
-                }
-
-                // 원문 저장(처음 한 번만)
-                if (!StringUtils.hasText(targetPayment.getPayRaw()) && StringUtils.hasText(respJson)) {
-                    targetPayment.setPayRaw(respJson);
-                    changed = true;
-                }
-
-                if (changed) {
-                    paymentRepo.save(targetPayment);
-                    log.info("[Billing] cardMeta updated (payId={}) meta={{bin={}, brand={}, last4={}, pg={}}}",
-                            targetPayment.getPayId(),
-                            targetPayment.getPayBin(),
-                            targetPayment.getPayBrand(),
-                            targetPayment.getPayLast4(),
-                            targetPayment.getPayPg());
-                } else {
-                    log.info("[Billing] cardMeta skipped (no new fields) for payId={}", targetPayment.getPayId());
+            // 부족하면 상세 룩업으로 보강
+            PlanLookupResult looked = null;
+            if (pieces.isIncomplete() && StringUtils.hasText(respUid)) {
+                PlanPortoneClientService.LookupResponse lr = pgSvc.safeLookup(respUid);
+                if (lr != null && StringUtils.hasText(lr.raw())) {
+                    // ✅ record 시그니처에 맞춰 success 플래그 포함
+                    looked = new PlanLookupResult(true, lr.id(), lr.status(), lr.raw());
+                    CardPieces sub = extractCardPiecesFromJson(looked.rawJson());
+                    pieces = pieces.merge(sub);
                 }
             }
+
+            // 영수증 URL 보강
+            if (!StringUtils.hasText(att.getPattUrl()) && looked != null && StringUtils.hasText(looked.rawJson())) {
+                String tryUrl = resolveReceiptUrl(null, looked.rawJson(), respUid);
+                if (StringUtils.hasText(tryUrl)) {
+                    att.setPattUrl(cut(tryUrl, MAX_URL_LEN));
+                    attemptRepo.save(att);
+                }
+            }
+
+            boolean changed = false;
+
+            if (StringUtils.hasText(pieces.bin) && !pieces.bin.equals(pay.getPayBin())) {
+                pay.setPayBin(pieces.bin); changed = true;
+            }
+
+            String brandKo = firstNonBlank(
+                    pieces.brandKo,
+                    normalizeIssuerKo(pieces.issuerKo),
+                    normalizeIssuerKo(pieces.companyKo),
+                    fromMaskedNameAsIssuerKo(pieces.maskedName)
+            );
+            if (StringUtils.hasText(brandKo) && !brandKo.equals(pay.getPayBrand())) {
+                pay.setPayBrand(brandKo); changed = true;
+            }
+
+            String last4 = tail4Digits(firstNonBlank(pieces.last4, pieces.maskedNumber));
+            if (StringUtils.hasText(last4) && !last4.equals(pay.getPayLast4())) {
+                pay.setPayLast4(last4); changed = true;
+            }
+
+            if (!"TossPayments".equals(pay.getPayPg())) {
+                pay.setPayPg("TossPayments"); changed = true;
+            }
+
+            if (!StringUtils.hasText(pay.getPayRaw()) && StringUtils.hasText(safeJson)) {
+                pay.setPayRaw(cut(safeJson, MAX_JSON_LEN)); changed = true;
+            }
+
+            if (changed) {
+                paymentRepo.save(pay);
+                log.info("[Billing] card meta updated → payId={}, brand={}, last4={}, bin={}",
+                        pay.getPayId(), pay.getPayBrand(), pay.getPayLast4(), pay.getPayBin());
+            } else {
+                log.info("[Billing] card meta unchanged → payId={}", pay.getPayId());
+            }
+
         } catch (Exception e) {
-            log.warn("[Billing] save card meta failed: {}", e.toString(), e);
+            log.error("[Billing] card meta update failed → {}", e.getMessage(), e);
         }
     }
 
-    // ===== helpers =====
-    private String resolveReceiptUrl(String explicitReceipt, String rawJson, String targetId) {
-        if (StringUtils.hasText(explicitReceipt)) return explicitReceipt;
-        if (!StringUtils.hasText(rawJson)) return null;
-        try {
-            JsonNode root = OM.readTree(rawJson);
+    /* ========================= 내부 유틸 ========================= */
 
-            String v = firstNonBlank(
-                    get(root, "receiptUrl"),
-                    get(root, "receipt", "url"),
-                    get(root, "urls", "receipt"),
-                    get(root, "payment", "receiptUrl"),
-                    get(root, "payment", "receipt", "url"),
-                    (root.has("transactions") && root.path("transactions").isArray() && root.path("transactions").size() > 0)
-                            ? get(root.path("transactions").get(0), "receiptUrl") : null
-            );
-            if (StringUtils.hasText(v)) return v;
+    private PattResult resolveResult(boolean isSuccess, String reason) {
+        if (isSuccess) return PattResult.SUCCESS;
+        String up = reason == null ? "" : reason.trim().toUpperCase(Locale.ROOT);
+        if (up.contains("FAIL") || up.contains("ERROR") || up.contains("CANCEL")) return PattResult.FAIL;
+        return PattResult.PENDING;
+    }
 
-            JsonNode node = findPaymentNode(root, targetId);
-            return firstNonBlank(
-                    get(node, "receiptUrl"),
-                    get(node, "receipt", "url"),
-                    get(node, "urls", "receipt"),
-                    get(node, "payment", "receiptUrl"),
-                    get(node, "payment", "receipt", "url"),
-                    (node.has("transactions") && node.path("transactions").isArray() && node.path("transactions").size() > 0)
-                            ? get(node.path("transactions").get(0), "receiptUrl") : null
-            );
-        } catch (Exception ignore) { }
+    private String sanitizeRespJson(String respJson) {
+        if (!StringUtils.hasText(respJson)) return null;
+        String trimmed = respJson.trim();
+        if (trimmed.contains("\"error\":\"no paymentId\"")) return null;
+        return trimmed;
+    }
+
+    private PlanPaymentEntity resolvePaymentEntity(PlanInvoiceEntity inv, String json, String respUid) {
+        PlanMember pm = inv.getPlanMember();
+        if (pm != null && pm.getPayment() != null) {
+            return pm.getPayment();
+        }
+        String bk = extractBillingKey(json);
+        if (!StringUtils.hasText(bk) && StringUtils.hasText(respUid)) {
+            PlanPortoneClientService.LookupResponse lr = pgSvc.safeLookup(respUid);
+            if (lr != null && StringUtils.hasText(lr.raw())) {
+                PlanLookupResult look = new PlanLookupResult(true, lr.id(), lr.status(), lr.raw());
+                if (StringUtils.hasText(look.rawJson())) {
+                    bk = extractBillingKey(look.rawJson());
+                }
+            }
+        }
+        if (StringUtils.hasText(bk)) {
+            return paymentRepo.findByPayKey(bk).orElse(null);
+        }
         return null;
     }
 
-    private static JsonNode findPaymentNode(JsonNode root, String targetId) {
-        if (root == null || root.isMissingNode()) return OM.createObjectNode();
-        if (!StringUtils.hasText(targetId)) return firstPaymentNode(root);
-
-        if (!root.isArray() && !root.has("items") && !root.has("content")) {
-            if (matches(root, targetId)) return root;
-            JsonNode p = root.path("payment");
-            if (!p.isMissingNode() && matches(p, targetId)) return root;
-        }
-
-        if (root.isArray()) {
-            for (JsonNode n : root) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
-        }
-        if (root.has("items") && root.path("items").isArray()) {
-            for (JsonNode n : root.path("items")) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
-        }
-        if (root.has("content") && root.path("content").isArray()) {
-            for (JsonNode n : root.path("content")) if (matches(n, targetId) || matches(n.path("payment"), targetId)) return n;
-        }
-        return firstPaymentNode(root);
+    private boolean isPaidLike(String json) {
+        if (!StringUtils.hasText(json)) return false;
+        String upper = json.toUpperCase(Locale.ROOT);
+        return upper.contains("\"STATUS\":\"PAID\"")
+                || upper.contains("\"PAYMENTSTATUS\":\"PAID\"")
+                || upper.contains("\"STATUS\":\"DONE\"")
+                || upper.contains("\"SUCCEEDED\"");
     }
 
-    private static boolean matches(JsonNode n, String targetId) {
-        if (!StringUtils.hasText(targetId) || n == null || n.isMissingNode()) return false;
-        String id  = get(n, "id");
-        String pid = get(n.path("payment"), "id");
-        String tx  = get(n, "transactionId");
-        String ptx = get(n.path("payment"), "transactionId");
-        return targetId.equals(id) || targetId.equals(pid) || targetId.equals(tx) || targetId.equals(ptx);
+    private String cut(String s, int max) {
+        if (!StringUtils.hasText(s)) return s;
+        return (s.length() <= max) ? s : s.substring(0, max);
     }
 
-    private static JsonNode firstPaymentNode(JsonNode root) {
-        if (root == null || root.isMissingNode()) return OM.createObjectNode();
-        if (root.isArray()) return root.size() > 0 ? root.get(0) : OM.createObjectNode();
-        if (root.has("items") && root.path("items").isArray()) {
-            JsonNode arr = root.path("items"); return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
-        }
-        if (root.has("content") && root.path("content").isArray()) {
-            JsonNode arr = root.path("content"); return arr.size() > 0 ? arr.get(0) : OM.createObjectNode();
-        }
-        return root;
-    }
-
-    private String extractBillingKey(String raw) {
+    /** 영수증 URL 추출 */
+    private String resolveReceiptUrl(String given, String json, String respUid) {
+        if (StringUtils.hasText(given)) return given;
         try {
-            JsonNode root = OM.readTree(raw);
-            if (root.has("items") && root.get("items").isArray() && root.get("items").size() > 0) {
-                String v = n(root.get(0).path("billingKey").asText(null));
+            if (StringUtils.hasText(json)) {
+                JsonNode root = OM.readTree(json);
+                String v = asText(root, "receiptUrl");
+                if (StringUtils.hasText(v)) return v;
+                v = asText(root, "pgResponse.receipt.url");
+                if (StringUtils.hasText(v)) return v;
+                JsonNode items = root.path("items");
+                if (items.isArray() && items.size() > 0) {
+                    v = asText(items.get(0), "receiptUrl");
+                    if (StringUtils.hasText(v)) return v;
+                    v = asText(items.get(0), "pgResponse.receipt.url");
+                    if (StringUtils.hasText(v)) return v;
+                }
+            }
+        } catch (Exception ignore) {}
+        return null;
+    }
+
+    private String extractBillingKey(String json) {
+        if (!StringUtils.hasText(json)) return null;
+        try {
+            JsonNode root = OM.readTree(json);
+            String v = asText(root, "billingKey");
+            if (StringUtils.hasText(v)) return v;
+            JsonNode items = root.path("items");
+            if (items.isArray() && items.size() > 0) {
+                v = asText(items.get(0), "billingKey");
                 if (StringUtils.hasText(v)) return v;
             }
-            String v2 = n(root.path("payment").path("billingKey").asText(null));
-            if (StringUtils.hasText(v2)) return v2;
-            return n(root.path("billingKey").asText(null));
-        } catch (Exception ignore) { }
-        return null;
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    private static String get(JsonNode n, String... path) {
-        if (n == null) return null;
-        JsonNode cur = n;
-        for (String p : path) cur = (cur == null ? null : cur.path(p));
-        if (cur == null) return null;
-        String v = cur.asText(null);
-        return (v != null && !v.isBlank()) ? v : null;
+    private CardPieces extractCardPiecesFromJson(String json) {
+        CardPieces p = new CardPieces();
+        if (!StringUtils.hasText(json)) return p;
+        try {
+            JsonNode root = OM.readTree(json);
+
+            JsonNode method = root.path("method");
+            if (!method.isMissingNode() && "PaymentMethodCard".equals(asText(method, "type"))) {
+                JsonNode card = method.path("card");
+                if (!card.isMissingNode()) {
+                    p.publisher    = asText(card, "publisher");
+                    p.issuerKo     = asText(card, "issuer");
+                    p.brandEn      = asText(card, "brand");
+                    p.type         = asText(card, "type");
+                    p.ownerType    = asText(card, "ownerType");
+                    p.bin          = asText(card, "bin");
+                    p.maskedName   = asText(card, "name");
+                    p.maskedNumber = asText(card, "number");
+                }
+            }
+
+            JsonNode pgResponse = root.path("pgResponse");
+            if (!pgResponse.isMissingNode()) {
+                JsonNode card = pgResponse.path("card");
+                if (!card.isMissingNode()) {
+                    String company = asText(card, "company");
+                    if (StringUtils.hasText(company)) p.companyKo = company;
+                    String num = asText(card, "number");
+                    if (StringUtils.hasText(num)) {
+                        if (!StringUtils.hasText(p.maskedNumber)) p.maskedNumber = num;
+                        if (!StringUtils.hasText(p.last4)) p.last4 = tail4Digits(num);
+                    }
+                    String issuerCode = asText(card, "issuerCode");
+                    if (StringUtils.hasText(issuerCode) && !StringUtils.hasText(p.issuerCode)) {
+                        p.issuerCode = normalizeIssuerCode(issuerCode);
+                    }
+                }
+            }
+
+            if (!StringUtils.hasText(p.last4)) {
+                p.last4 = tail4Digits(p.maskedNumber);
+            }
+            if (!StringUtils.hasText(p.brandKo)) {
+                String ko = firstNonBlank(p.companyKo, fromMaskedNameAsIssuerKo(p.maskedName), normalizeIssuerKo(p.issuerKo));
+                p.brandKo = ko;
+            }
+        } catch (Exception e) {
+            log.warn("[Billing] extractCardPiecesFromJson failed: {}", e.getMessage());
+        }
+        return p;
     }
 
     private static String firstNonBlank(String... arr) {
         if (arr == null) return null;
-        for (String s : arr) if (s != null && !s.isBlank()) return s;
+        for (String s : arr) if (StringUtils.hasText(s)) return s;
         return null;
     }
 
-    private static String n(String s){ return (s==null || s.isBlank()) ? null : s; }
+    private static String asText(JsonNode node, String dottedPath) {
+        if (node == null || node.isMissingNode() || !StringUtils.hasText(dottedPath)) return null;
+        String[] parts = dottedPath.split("\\.");
+        JsonNode cur = node;
+        for (String p : parts) {
+            cur = cur.path(p);
+            if (cur.isMissingNode()) return null;
+        }
+        if (cur.isTextual()) return cur.asText();
+        if (cur.isNumber()) return cur.asText();
+        return null;
+    }
 
-    private static String mask(String v) {
-        if (!StringUtils.hasText(v)) return v;
-        return (v.length() <= 8) ? "****" + v : v.substring(0, 4) + "****" + v.substring(v.length() - 4);
+    public static String tail4Digits(String cardNumberLike) {
+        if (!StringUtils.hasText(cardNumberLike)) return null;
+        String digits = cardNumberLike.replaceAll("[^0-9]", "");
+        if (digits.length() < 4) return null;
+        return digits.substring(digits.length() - 4);
+    }
+
+    private static String fromMaskedNameAsIssuerKo(String maskedName) {
+        if (!StringUtils.hasText(maskedName)) return null;
+        String s = maskedName.trim();
+        if (s.endsWith("카드")) return s.substring(0, s.length() - 2).trim();
+        return s;
+    }
+
+    public static String normalizeIssuerKo(String issuerLike) {
+        if (!StringUtils.hasText(issuerLike)) return null;
+        String u = issuerLike.trim().toUpperCase(Locale.ROOT);
+        Map<String, String> map = new HashMap<>();
+        map.put("HYUNDAI_CARD", "현대");
+        map.put("SHINHAN_CARD", "신한");
+        map.put("KOOKMIN_CARD", "국민");
+        map.put("HANA_CARD", "하나");
+        map.put("SAMSUNG_CARD", "삼성");
+        map.put("LOTTES_CARD", "롯데");
+        map.put("KAKAO_BANK", "카카오뱅크");
+        map.put("TOSS_BANK", "토스뱅크");
+        return map.getOrDefault(u, issuerLike);
+    }
+
+    public static String normalizeIssuerCode(String codeLike) {
+        if (!StringUtils.hasText(codeLike)) return null;
+        String onlyDigits = codeLike.replaceAll("[^0-9]", "");
+        return onlyDigits.isEmpty() ? null : onlyDigits;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    private static class CardPieces {
+        String publisher;
+        String issuerKo;
+        String issuerCode;
+        String companyKo;
+        String brandEn;
+        String brandKo;
+        String type;
+        String ownerType;
+        String bin;
+        String maskedName;
+        String maskedNumber;
+        String last4;
+
+        boolean isIncomplete() {
+            return !StringUtils.hasText(bin) || !StringUtils.hasText(brandKo) || !StringUtils.hasText(last4);
+        }
+
+        CardPieces merge(CardPieces other) {
+            if (other == null) return this;
+            CardPieces r = new CardPieces();
+            r.publisher    = firstNonBlank(this.publisher, other.publisher);
+            r.issuerKo     = firstNonBlank(this.issuerKo, other.issuerKo);
+            r.issuerCode   = firstNonBlank(this.issuerCode, other.issuerCode);
+            r.companyKo    = firstNonBlank(this.companyKo, other.companyKo);
+            r.brandEn      = firstNonBlank(this.brandEn, other.brandEn);
+            r.brandKo      = firstNonBlank(this.brandKo, other.brandKo);
+            r.type         = firstNonBlank(this.type, other.type);
+            r.ownerType    = firstNonBlank(this.ownerType, other.ownerType);
+            r.bin          = firstNonBlank(this.bin, other.bin);
+            r.maskedName   = firstNonBlank(this.maskedName, other.maskedName);
+            r.maskedNumber = firstNonBlank(this.maskedNumber, other.maskedNumber);
+            r.last4        = firstNonBlank(this.last4, other.last4);
+            return r;
+        }
     }
 }

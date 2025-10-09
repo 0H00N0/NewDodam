@@ -106,10 +106,11 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         String paymentId = "inv" + invoice.getPiId() + "-ts" + System.currentTimeMillis();
         String orderName = "Dodam Subscription";
 
-        // ✅ 웹훅 매칭 대비 — our orderId 선저장
-        invoice.setPiUid(paymentId);
-        invoiceRepo.save(invoice);
+        // ❌ (삭제됨) orderId를 piUid에 선저장하지 않음
+        // invoice.setPiUid(paymentId);
 
+        // timeToPayUtc는 기존 로직에서 3초 후로 호출하고 있어 confirm로 흘러가지만,
+        // 향후 예약 결제를 원하면 충분히 미래 시점으로 넘기면 schedules 로 자동 분기된다.
         portoneClient.scheduleByBillingKey(
                 paymentId,
                 billingKey,
@@ -130,10 +131,18 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         resp.put("status", status);
 
         if (isPaid(status)) {
-            // ✅ 성공해도 piUid는 our orderId 유지
+            // 성공 시 provider paymentId를 얻을 수 있으면 piUid에 기록
+            String providerPaymentId = firstNonBlank(
+                    result.path("id").asText(null),
+                    result.at("/payment/id").asText(null),
+                    result.at("/items/0/id").asText(null)  // 리스트 형태 보정
+            );
+
             invoice.setPiStat(PiStatus.PAID);
             invoice.setPiPaid(LocalDateTime.now());
-            invoice.setPiUid(paymentId);
+            if (StringUtils.hasText(providerPaymentId)) {
+                invoice.setPiUid(providerPaymentId);
+            }
             invoiceRepo.save(invoice);
 
             activateInvoice(invoice, termMonths);
@@ -314,7 +323,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         return chargeByBillingKeyAndConfirm(invoice.getPiId(), mid, months);
     }
 
- // ---- helpers ----
+    // ---- helpers ----
     private void updatePaymentCardMetaIfPresent(PlanPaymentEntity payment, JsonNode root) {
         if (payment == null || root == null || root.isMissingNode()) return;
 
@@ -412,5 +421,9 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
     private JsonNode safeJson(String s) {
         try { return om.readTree(s == null ? "{}" : s); }
         catch (Exception e) { return om.createObjectNode(); }
+    }
+    private JsonNode scheduleNowPlusSeconds(String paymentId, String billingKey, long amount, String currency, String customerId, String orderName, int plusSeconds) {
+        Instant payAt = Instant.now().plusSeconds(Math.max(plusSeconds, 1));
+        return portoneClient.scheduleByBillingKey(paymentId, billingKey, amount, currency, customerId, orderName, payAt);
     }
 }
