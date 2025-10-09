@@ -1,114 +1,269 @@
 package com.dodam.plan.service;
 
 import com.dodam.plan.config.PlanPortoneProperties;
-import com.dodam.plan.service.PlanPortoneClientService.ConfirmRequest;
-import com.dodam.plan.service.PlanPortoneClientService.ConfirmResponse;
-import com.dodam.plan.service.PlanPortoneClientService.LookupResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Optional;
 
 @Slf4j
-@Service
+@Service("planPortoneClientServiceImpl")
+@RequiredArgsConstructor
 public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
 
-    private final WebClient portone;
-    private final String storeId;
-    private final boolean isTest;
+    private final WebClient portoneWebClient;   // Config에서 주입
+    private final PlanPortoneProperties props;  // 필요 시 사용
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private static final Duration TIMEOUT_CONFIRM = Duration.ofSeconds(60);
-    private static final Duration TIMEOUT_LOOKUP  = Duration.ofSeconds(60);
+    // PortOne 권장: 최소 60초 읽기 타임아웃
+    private Duration timeout() { return Duration.ofSeconds(60); }
+    private static String enc(String v) { return URLEncoder.encode(v, StandardCharsets.UTF_8); }
+    private static boolean hasText(String s) { return s != null && !s.isBlank(); }
 
-    public PlanPortoneClientServiceImpl(@Qualifier("portoneWebClient") WebClient portoneWebClient,
-                                        PlanPortoneProperties props) {
-        this.portone = portoneWebClient;
-        this.storeId = props.getStoreId();
-        this.isTest = Boolean.TRUE.equals(props.getIsTest());
+    /** dotted path 텍스트 추출 (없으면 null) */
+    private String jst(JsonNode n, String dotted) {
+        if (n == null) return null;
+        String[] p = dotted.split("\\.");
+        JsonNode cur = n;
+        for (String k : p) cur = cur.path(k);
+        return (cur.isMissingNode() || cur.isNull()) ? null : cur.asText();
     }
 
+    // ======================== 즉시 결제(빌링키) ========================
+    // V2: POST /payments/{paymentId}/billing-key
     @Override
-    public Map<String, Object> confirmIssueBillingKey(String billingIssueToken) {
-        Map<String,Object> body = Map.of("billingIssueToken", billingIssueToken);
+    public ConfirmResponse confirmByOrderId(
+            String orderId,
+            String billingKey,
+            long amount,
+            String currency,
+            String customerId,
+            String orderName
+    ) {
         try {
-            String raw = portone.post()
-                    .uri("/billing-keys/confirm")
-                    .bodyValue(body)
+            final String useCurr = hasText(currency) ? currency : "KRW";
+            final String useName = hasText(orderName) ? orderName : "Dodam Subscription";
+
+            ObjectNode body = mapper.createObjectNode();
+            ObjectNode amountNode = mapper.createObjectNode();
+            amountNode.put("total", amount);
+            body.set("amount", amountNode);
+            body.put("currency", useCurr);
+            body.put("orderName", useName);
+            body.put("billingKey", billingKey);
+
+            // customer.id (V2 스키마)
+            ObjectNode customer = mapper.createObjectNode();
+            if (hasText(customerId)) customer.put("id", customerId);
+            body.set("customer", customer);
+
+            String raw = portoneWebClient
+                    .post()
+                    .uri("/payments/{paymentId}/billing-key", orderId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromValue(body.toString()))
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .doOnSubscribe(s -> log.info("[PortOne] POST https://api.portone.io/payments/{}/billing-key  Authorization=PortOne ****", orderId))
                     .block();
 
-            JsonNode json = mapper.readTree(raw);
-            Map<String,Object> res = new HashMap<>();
-            res.put("status", "ISSUED");
-            String billingKey = json.path("billingKey").asText(null);
-            if (billingKey != null) res.put("billingKey", billingKey);
-            res.put("_raw", json);
-            log.info("[PortOne] issue confirm OK billingKey={}", billingKey);
-            return res;
+            JsonNode r = mapper.readTree(raw == null ? "{}" : raw);
+            String status = jst(r, "status");
+            String id     = jst(r, "id"); // 결제ID
 
+            log.info("[PortOne] billing-key pay id={} status={} amount={} paidAt={}",
+                    hasText(id) ? id : orderId, status, jst(r, "amount.total"), jst(r, "paidAt"));
+
+            return new ConfirmResponse(
+                    id,
+                    hasText(status) ? status : "PENDING",
+                    raw
+            );
         } catch (Exception e) {
-            log.error("[PortOne] issue confirm error {}", e.toString());
-            throw new RuntimeException(e);
+            log.warn("[PortOne] billing-key pay TIMEOUT/ERROR -> PENDING (orderId={})", orderId, e);
+            String raw = "{\"status\":\"PENDING\",\"orderId\":\"" + orderId + "\"}";
+            return new ConfirmResponse(null, "PENDING", raw);
         }
     }
 
     @Override
     public ConfirmResponse confirmByBillingKey(ConfirmRequest req) {
-        try {
-            Map<String, Object> amount = Map.of("total", req.amountValue());
-            Map<String, Object> body = new HashMap<>();
-            if (storeId != null && !storeId.isBlank()) body.put("storeId", storeId);
-            body.put("billingKey", req.billingKey());
-            body.put("amount", amount);
-            body.put("currency", req.currency());
-            if (req.orderName() != null && !req.orderName().isBlank()) body.put("orderName", req.orderName());
-            if (req.customerId() != null && !req.customerId().isBlank()) {
-                body.put("customer", Map.of("id", req.customerId()));
-            }
-            if (isTest || req.isTest()) body.put("isTest", true);
+        return confirmByOrderId(
+                req.paymentId(),     // 여기서는 결제건ID(=우리 orderId)를 그대로 사용
+                req.billingKey(),
+                req.amountValue(),
+                req.currency(),
+                req.customerId(),
+                req.orderName()
+        );
+    }
 
-            String raw = portone.post()
-                    .uri(uriBuilder -> uriBuilder.path("/payments/{pid}/billing-key").build(req.paymentId()))
-                    .header("Idempotency-Key", req.paymentId())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(body)
+    // ======================== 단건 조회 ========================
+    @Override
+    public LookupResponse lookupPayment(String paymentId) {
+        try {
+            String raw = portoneWebClient.get()
+                    .uri("/payments/" + enc(paymentId))
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(TIMEOUT_CONFIRM)
-                    .onErrorResume(io.netty.handler.timeout.ReadTimeoutException.class, t -> {
-                        log.warn("[PortOne] confirm READ TIMEOUT -> PENDING (pid={})", req.paymentId());
-                        return Mono.just("{\"status\":\"PENDING\",\"id\":\""+req.paymentId()+"\"}");
-                    })
-                    .onErrorResume(java.util.concurrent.TimeoutException.class, t -> {
-                        log.warn("[PortOne] confirm TIMEOUT -> PENDING (pid={})", req.paymentId());
-                        return Mono.just("{\"status\":\"PENDING\",\"id\":\""+req.paymentId()+"\"}");
-                    })
+                    .timeout(timeout())
+                    .doOnSubscribe(s -> log.info("[PortOne] GET https://api.portone.io/payments/{}  Authorization=PortOne ****", paymentId))
                     .block();
 
-            JsonNode root = safeJson(raw);
-            String status = pickStatus(root);
-
-            // 여기서는 lookup을 강제하지 않는다(웹훅/외부 폴링이 최종 진실).
-            return new ConfirmResponse(req.paymentId(), status != null ? status : "PENDING", raw);
-
+            JsonNode r = mapper.readTree(raw == null ? "{}" : raw);
+            return new LookupResponse(
+                    r.path("id").asText(null),
+                    r.path("status").asText(null),
+                    raw
+            );
         } catch (Exception e) {
-            log.error("[PortOne] confirmByBillingKey failed", e);
-            return new ConfirmResponse(req.paymentId(), "ERROR", e.toString());
+            String raw = "{\"status\":\"ERROR\",\"message\":\"" + e + "\"}";
+            return new LookupResponse(paymentId, "ERROR", raw);
         }
     }
 
+    // ======================== 리스트 조회 (정확매칭) ========================
+    @Override
+    public Optional<JsonNode> findPaymentByExactOrderId(String orderId) {
+        try {
+            String listRaw = portoneWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/payments")
+                            .queryParam("orderId", orderId)
+                            .queryParam("size", 50)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .doOnSubscribe(s -> log.info("[PortOne] GET https://api.portone.io/payments?orderId={}&size=50  Authorization=PortOne ****", orderId))
+                    .block();
+
+            if (!StringUtils.hasText(listRaw)) return Optional.empty();
+
+            log.info("[PortOne] /payments?orderId={}&size=50 응답: {}", orderId, listRaw);
+
+            JsonNode root = mapper.readTree(listRaw);
+            JsonNode items = root.path("items");
+            if (!items.isArray()) return Optional.empty();
+
+            for (JsonNode it : items) {
+                String id = it.path("id").asText(null);
+
+                // pgResponse가 문자열/오브젝트 두 가지 케이스 처리
+                String pgOrderId = null;
+                JsonNode pgResp = it.get("pgResponse");
+                if (pgResp != null && !pgResp.isNull()) {
+                    if (pgResp.isObject()) {
+                        pgOrderId = pgResp.path("orderId").asText(null);
+                    } else if (pgResp.isTextual()) {
+                        try {
+                            JsonNode parsed = mapper.readTree(pgResp.asText());
+                            pgOrderId = parsed.path("orderId").asText(null);
+                        } catch (Exception ignore) { }
+                    }
+                }
+
+                if (orderId.equals(id) || orderId.equals(pgOrderId)) {
+                    return Optional.of(it);
+                }
+            }
+            return Optional.empty();
+
+        } catch (Exception e) {
+            log.warn("[PortOne] findPaymentByExactOrderId error: {}", e.toString());
+            return Optional.empty();
+        }
+    }
+
+    // ======================== 유틸 조회 ========================
+    @Override
+    public JsonNode findPaymentByOrderId(String orderId) {
+        try {
+            String listRaw = portoneWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/payments")
+                            .queryParam("orderId", orderId)
+                            .queryParam("size", 10)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .doOnSubscribe(s -> log.info("[PortOne] GET https://api.portone.io/payments?orderId={}&size=10  Authorization=PortOne ****", orderId))
+                    .block();
+            return mapper.readTree(StringUtils.hasText(listRaw) ? listRaw : "{}");
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    @Override
+    public JsonNode getPayment(String paymentId) {
+        try {
+            String raw = portoneWebClient.get()
+                    .uri("/payments/" + enc(paymentId))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .block();
+            return mapper.readTree(StringUtils.hasText(raw) ? raw : "{}");
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    @Override
+    public JsonNode listPaymentsByBillingKey(String billingKey, int size) {
+        try {
+            String raw = portoneWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/payments")
+                            .queryParam("billingKey", billingKey)
+                            .queryParam("size", size)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .block();
+            return mapper.readTree(StringUtils.hasText(raw) ? raw : "{}");
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    @Override
+    public JsonNode getPaymentByOrderId(String orderId) {
+        try {
+            String raw = portoneWebClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/payments")
+                            .queryParam("orderId", orderId)
+                            .queryParam("size", 10)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .block();
+            return mapper.readTree(StringUtils.hasText(raw) ? raw : "{}");
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    // ======================== 스케줄 결제(빌링키) ========================
+    // V2: POST /payments/{paymentId}/schedule  (body: { payment: BillingKeyPaymentInput, timeToPay: RFC3339 })
     @Override
     public JsonNode scheduleByBillingKey(
             String paymentId,
@@ -120,223 +275,50 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
             Instant timeToPayUtc
     ) {
         try {
-            Map<String, Object> payment = new HashMap<>();
+            final String useCurr = hasText(currency) ? currency : "KRW";
+            final String useName = hasText(orderName) ? orderName : "Dodam Subscription";
+
+            // payment(BillingKeyPaymentInput)
+            ObjectNode payment = mapper.createObjectNode();
+            ObjectNode amountNode = mapper.createObjectNode();
+            amountNode.put("total", amount);
+            payment.set("amount", amountNode);
+            payment.put("currency", useCurr);
+            payment.put("orderName", useName);
             payment.put("billingKey", billingKey);
-            payment.put("orderName", (orderName != null && !orderName.isBlank()) ? orderName : "정기결제");
-            payment.put("amount", Map.of("total", amount));
-            payment.put("currency", (currency != null && !currency.isBlank()) ? currency : "KRW");
-            if (storeId != null && !storeId.isBlank()) payment.put("storeId", storeId);
-            if (isTest) payment.put("isTest", true);
-            if (customerId != null && !customerId.isBlank()) {
-                payment.put("customer", Map.of("id", customerId));
-            }
 
-            Map<String, Object> body = new HashMap<>();
-            String iso = (timeToPayUtc != null)
-                    ? DateTimeFormatter.ISO_INSTANT.format(timeToPayUtc)
-                    : DateTimeFormatter.ISO_INSTANT.format(Instant.now().plusSeconds(30));
-            body.put("payment", payment);
-            body.put("timeToPay", iso);
+            ObjectNode customer = mapper.createObjectNode();
+            if (hasText(customerId)) customer.put("id", customerId);
+            payment.set("customer", customer);
 
-            String raw = portone.post()
-                    .uri(uriBuilder -> uriBuilder.path("/payments/{pid}/schedules").build(paymentId))
-                    .header("Idempotency-Key", "sch-" + paymentId + "-" +
-                            (timeToPayUtc != null ? timeToPayUtc.getEpochSecond() : Instant.now().getEpochSecond()))
+            ObjectNode body = mapper.createObjectNode();
+            body.set("payment", payment);
+            // RFC3339 (예: 2025-10-04T08:21:30Z)
+            body.put("timeToPay", timeToPayUtc.toString());
+
+            String raw = portoneWebClient
+                    .post()
+                    .uri("/payments/{paymentId}/schedule", paymentId)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(body)
-                    .exchangeToMono(res -> res.bodyToMono(String.class)
-                            .defaultIfEmpty("")
-                            .map(t -> {
-                                if (res.statusCode().isError()) {
-                                    log.error("[PortOne] schedule billing-key {} {}", res.statusCode(), t);
-                                } else {
-                                    log.info("[PortOne] schedule created: {}", t);
-                                }
-                                return t;
-                            }))
-                    .timeout(TIMEOUT_CONFIRM)
+                    .body(BodyInserters.fromValue(body.toString()))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(timeout())
+                    .doOnSubscribe(s -> log.info("[PortOne] POST https://api.portone.io/payments/{}/schedule  Authorization=PortOne ****", paymentId))
                     .block();
 
-            return mapper.readTree(raw == null ? "{}" : raw);
+            return mapper.readTree(StringUtils.hasText(raw) ? raw : "{}");
         } catch (Exception e) {
-            log.error("[PortOne] scheduleByBillingKey failed", e);
-            var obj = mapper.createObjectNode();
-            obj.put("status", "ERROR");
-            obj.put("message", String.valueOf(e));
-            return obj;
+            log.warn("[PortOne] scheduleByBillingKey error: {}", e.toString());
+            ObjectNode err = mapper.createObjectNode();
+            err.put("status", "ERROR");
+            err.put("message", e.toString());
+            return err;
         }
     }
 
     @Override
-    public LookupResponse lookupPayment(String paymentId) {
-        try {
-            String raw = portone.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/payments")
-                            .queryParam("paymentId", paymentId)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(TIMEOUT_LOOKUP);
-
-            if (raw == null) return new LookupResponse(paymentId, "ERROR", "{\"error\":\"NO_RESPONSE\"}");
-
-            JsonNode json = safeJson(raw);
-            JsonNode node = findPaymentNode(json, paymentId);
-
-            String id = pick(node, "id");
-            if (id == null) id = pick(node.path("payment"), "id");
-            String status = pickStatus(node);
-
-            if (node == null || node.isMissingNode() || id == null) {
-                return new LookupResponse(paymentId, "NOT_FOUND", "{\"status\":\"NOT_FOUND\"}");
-            }
-
-            String matchedRaw = node.toString();
-            return new LookupResponse(id, status != null ? status : "UNKNOWN", matchedRaw);
-
-        } catch (Exception e) {
-            log.error("[PortOne] lookupPayment({}) failed", paymentId, e);
-            return new LookupResponse(paymentId, "ERROR", e.toString());
-        }
-    }
-
-    @Override
-    public JsonNode getPayment(String paymentId) {
-        try {
-            String raw = portone.get()
-                    .uri(uriBuilder -> uriBuilder.path("/payments/{pid}").build(paymentId))
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(TIMEOUT_LOOKUP);
-            return mapper.readTree(raw == null ? "{}" : raw);
-        } catch (Exception e) {
-            log.error("[PortOne] getPayment failed", e);
-            var obj = mapper.createObjectNode();
-            obj.put("status", "ERROR");
-            obj.put("message", String.valueOf(e));
-            return obj;
-        }
-    }
-
-    @Override
-    public JsonNode listPaymentsByBillingKey(String billingKey, int size) {
-        try {
-            String raw = portone.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/payments")
-                            .queryParam("billingKey", billingKey)
-                            .queryParam("size", size <= 0 ? 10 : size)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(TIMEOUT_LOOKUP);
-            return mapper.readTree(raw == null ? "{}" : raw);
-        } catch (Exception e) {
-            log.error("[PortOne] listPaymentsByBillingKey failed", e);
-            var obj = mapper.createObjectNode();
-            obj.put("status", "ERROR");
-            obj.put("message", String.valueOf(e));
-            return obj;
-        }
-    }
-
-    @Override
-    public JsonNode getPaymentByOrderId(String orderId) {
-        try {
-            String raw = portone.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/payments")
-                            .queryParam("paymentId", orderId)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(TIMEOUT_LOOKUP);
-
-            JsonNode root = safeJson(raw);
-            JsonNode node = findPaymentNode(root, orderId);
-            return node.isMissingNode() ? root : node;
-        } catch (Exception e) {
-            log.error("[PortOne] getPaymentByOrderId({}) failed", orderId, e);
-            var obj = mapper.createObjectNode();
-            obj.put("status", "ERROR");
-            obj.put("message", String.valueOf(e));
-            return obj;
-        }
-    }
-
-    // ---- utils ----
-    private JsonNode safeJson(String s) {
-        try { return mapper.readTree(s == null ? "{}" : s); }
-        catch (Exception e) { return mapper.createObjectNode(); }
-    }
-    private String pickStatus(JsonNode n) {
-        String s = pick(n, "status");
-        if (s == null) s = pick(n.path("payment"), "status");
-        return s;
-    }
-    private String pick(JsonNode n, String field) {
-        if (n == null) return null;
-        String v = n.path(field).asText(null);
-        return (v == null || v.isBlank()) ? null : v;
-    }
-    private JsonNode firstPaymentNode(JsonNode root) {
-        if (root == null || root.isMissingNode()) return mapper.createObjectNode();
-        if (root.isArray()) return root.size() > 0 ? root.get(0) : mapper.createObjectNode();
-        if (root.has("items") && root.path("items").isArray()) {
-            JsonNode arr = root.path("items");
-            return arr.size() > 0 ? arr.get(0) : mapper.createObjectNode();
-        }
-        if (root.has("content") && root.path("content").isArray()) {
-            JsonNode arr = root.path("content");
-            return arr.size() > 0 ? arr.get(0) : mapper.createObjectNode();
-        }
-        return root;
-    }
-    /** 배열/래퍼가 있을 때, 특정 id/transactionId 와 '정확히' 매칭되는 노드를 찾아준다. */
-    private JsonNode findPaymentNode(JsonNode root, String targetId) {
-        if (root == null || root.isMissingNode()) return mapper.createObjectNode();
-        if (!org.springframework.util.StringUtils.hasText(targetId)) return firstPaymentNode(root);
-
-        // 단일
-        if (!root.isArray() && !root.has("items") && !root.has("content")) {
-            if (matches(root, targetId)) return root;
-            JsonNode p = root.path("payment");
-            if (!p.isMissingNode() && matches(p, targetId)) return root;
-        }
-
-        // 배열/items/content
-        java.util.function.Function<JsonNode, JsonNode> scanArr = arr -> {
-            for (JsonNode n : arr) {
-                if (matches(n, targetId)) return n;
-                JsonNode p = n.path("payment");
-                if (!p.isMissingNode() && matches(p, targetId)) return n;
-            }
-            return null;
-        };
-
-        if (root.isArray()) {
-            JsonNode hit = scanArr.apply(root);
-            if (hit != null) return hit;
-        }
-        if (root.has("items") && root.path("items").isArray()) {
-            JsonNode hit = scanArr.apply(root.path("items"));
-            if (hit != null) return hit;
-        }
-        if (root.has("content") && root.path("content").isArray()) {
-            JsonNode hit = scanArr.apply(root.path("content"));
-            if (hit != null) return hit;
-        }
-
-        // 못 찾으면 빈 객체 (NOT_FOUND로 처리하게)
-        return mapper.createObjectNode();
-    }
-    private boolean matches(JsonNode n, String targetId) {
-        if (!org.springframework.util.StringUtils.hasText(targetId) || n == null || n.isMissingNode()) return false;
-        String id  = pick(n, "id");
-        String pid = pick(n.path("payment"), "id");
-        String tx  = pick(n, "transactionId");
-        String ptx = pick(n.path("payment"), "transactionId");
-        return targetId.equals(id) || targetId.equals(pid) || targetId.equals(tx) || targetId.equals(ptx);
+    public java.util.Map<String, Object> confirmIssueBillingKey(String billingIssueToken) {
+        throw new UnsupportedOperationException("confirmIssueBillingKey is not implemented in this service.");
     }
 }

@@ -27,13 +27,13 @@ public class PlanAsyncConfig implements AsyncConfigurer {
         return ex;
     }
 
-    @Bean("webhookExecutor")
+    @Bean(name = "webhookExecutor")
     public Executor webhookExecutor() {
         ThreadPoolTaskExecutor ex = new ThreadPoolTaskExecutor();
         ex.setCorePoolSize(4);
         ex.setMaxPoolSize(8);
         ex.setQueueCapacity(200);
-        ex.setThreadNamePrefix("webhook-");
+        ex.setThreadNamePrefix("Webhook-");
         ex.initialize();
         return ex;
     }

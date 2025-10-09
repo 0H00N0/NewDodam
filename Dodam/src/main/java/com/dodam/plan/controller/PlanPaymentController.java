@@ -9,6 +9,7 @@ import com.dodam.plan.repository.PlanInvoiceRepository;
 import com.dodam.plan.repository.PlanPaymentRepository;
 import com.dodam.plan.service.PlanBillingService;
 import com.dodam.plan.service.PlanPaymentGatewayService;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +46,7 @@ public class PlanPaymentController {
                     new CustomizableThreadFactory("payment-async-")
             );
 
-    /** 인보이스 기반 결제 확정 */
+    /** 인보이스 기반 결제 확정 (UUID 대신 orderId 사용) */
     @PostMapping(value = "/confirm", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> confirm(@RequestBody Map<String, Object> body, HttpSession session) {
         String sid = (String) session.getAttribute("sid");
@@ -82,25 +83,51 @@ public class PlanPaymentController {
         final String customerId = resolveCustomerId(pm.getMember());
         final long amount = toLongAmount(inv.getPiAmount());
 
-        // 고유 paymentId 생성: inv{invoiceId}-u{uuid}
-        final String paymentId = "inv" + invoiceId + "-u" + UUID.randomUUID();
+        // ✅ 서버가 만드는 유일한 orderId: inv{invoiceId}-ts{epochMillis}
+        final String orderId = "inv" + invoiceId + "-ts" + System.currentTimeMillis();
 
-        // 비동기 confirm → 결과는 웹훅/추후조회로 반영
+        // 비동기 confirm → 결과는 웹훅/조회로 최종 반영
         paymentExecutor.submit(() -> {
             try {
-                var r = pgSvc.payByBillingKey(paymentId, billingKey, amount, customerId);
-                // 웹훅이 최종 진실 → 여기서는 "대기"로 기록
-                billingSvc.recordAttempt(inv.getPiId(), false, "ACCEPTED", paymentId, null, r.rawJson());
+                JsonNode confirmRes = pgSvc.confirmBilling(orderId, billingKey, amount, "KRW", "Dodam Subscription", customerId);
+
+                // 1) 우선 orderId 기준으로 기록 (ACCEPTED/PENDING 단계)
+                String rawJson = confirmRes != null ? confirmRes.toString() : null;
+                billingSvc.recordAttempt(inv.getPiId(), false, "ACCEPTED",
+                        /* respUid */ orderId, /* receiptUrl */ null, rawJson);
+
+                // 2) 정확 매칭 성공 시 paymentId로 보강 기록
+                pgSvc.findPaymentByExactOrderId(orderId).ifPresent(hit -> {
+                    String pid = hit.path("id").asText(null);
+                    billingSvc.recordAttempt(inv.getPiId(), false, "ACCEPTED",
+                            /* respUid */ pid, /* receiptUrl */ null, hit.toString());
+                    log.info("[payments/confirm-async] orderId={} -> paymentId={}", orderId, pid);
+                });
+
             } catch (Exception e) {
-                log.error("[payments/confirm-async] paymentId={}, error: {}", paymentId, e.toString(), e);
+                log.error("[payments/confirm-async] orderId={}, error: {}", orderId, e.toString(), e);
             }
         });
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of(
-                "result","ACCEPTED","paymentId",paymentId,"invoiceId",invoiceId));
+        // ✅ 응답 작성: 즉시 한 번만 orderId로 paymentId 정확 일치 조회 시도 (실패해도 무시)
+        String providerPaymentId = null;
+        try {
+            Optional<JsonNode> hit = pgSvc.findPaymentByExactOrderId(orderId);
+            if (hit.isPresent()) {
+                providerPaymentId = hit.get().path("id").asText(null);
+            }
+        } catch (Exception ignore) {}
+
+        Map<String,Object> res = new LinkedHashMap<>();
+        res.put("result","ACCEPTED");
+        res.put("orderId",orderId);
+        res.put("invoiceId",invoiceId);
+        if (providerPaymentId != null) res.put("paymentId", providerPaymentId); // 있으면 얹기
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(res);
     }
 
-    /** 직접 billingKey 결제(디버그용) */
+    /** 직접 billingKey 결제(디버그용) — 기존 유지 */
     @PostMapping(path = "/{paymentId}/billing-key", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> payByBillingKey(
             @PathVariable("paymentId") String paymentId,
@@ -138,18 +165,64 @@ public class PlanPaymentController {
         ));
     }
 
-    /** 간단 상태 조회 (DB 우선, 그 외 게이트웨이 보조) */
-    @GetMapping("/{paymentId}")
-    public ResponseEntity<?> getPaymentStatus(@PathVariable("paymentId") String paymentId) {
-        Long invoiceId = parseInvoiceId(paymentId);
-
-        var invOpt = (invoiceId != null)
-                ? invoiceRepo.findById(invoiceId)
-                : Optional.<PlanInvoiceEntity>empty();
-
+    /** 간단 상태 조회 (paymentId 또는 orderId 모두 허용) */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getPaymentStatus(@PathVariable("id") String id) {
         HttpHeaders nocache = new HttpHeaders();
         nocache.add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
         nocache.add("Pragma", "no-cache");
+
+        String paymentId = null;
+
+        if (isPaymentId(id)) {
+            paymentId = id;
+
+        } else if (isOrderId(id)) {
+            try {
+                Optional<JsonNode> hit = pgSvc.findPaymentByExactOrderId(id);
+                if (hit.isPresent()) {
+                    paymentId = hit.get().path("id").asText(null);
+                } else {
+                    // 정확 매칭 아직 없음 → PENDING or TIMEOUT (orderId 생성 후 15초 경과 시 종료)
+                    Long invoiceId = parseInvoiceIdFromOrderId(id);
+                    Long ts = parseTsFromOrderId(id);
+                    boolean timeout = (ts != null) && (System.currentTimeMillis() - ts > 15_000);
+
+                    Map<String,Object> resp = new LinkedHashMap<>();
+                    resp.put("paymentId", null);
+                    if (invoiceId != null) resp.put("invoiceId", invoiceId);
+                    resp.put("status", timeout ? "TIMEOUT" : "PENDING");
+                    resp.put("done", timeout);
+                    return ResponseEntity.ok().headers(nocache).body(resp);
+                }
+            } catch (Exception e) {
+                log.warn("[payments/status] findPaymentByExactOrderId failed: {}", e.toString());
+                Long invoiceId = parseInvoiceIdFromOrderId(id);
+                Map<String,Object> resp = new LinkedHashMap<>();
+                resp.put("paymentId", null);
+                if (invoiceId != null) resp.put("invoiceId", invoiceId);
+                resp.put("status", "PENDING");
+                resp.put("done", false);
+                return ResponseEntity.ok().headers(nocache).body(resp);
+            }
+        }
+
+        // paymentId를 확보 못했으면 여기서 종료 (404 스팸/무한루프 방지)
+        if (!StringUtils.hasText(paymentId)) {
+            Long invoiceId = isOrderId(id) ? parseInvoiceIdFromOrderId(id) : parseInvoiceId(id);
+            Map<String,Object> resp = new LinkedHashMap<>();
+            resp.put("paymentId", null);
+            if (invoiceId != null) resp.put("invoiceId", invoiceId);
+            resp.put("status", "PENDING");
+            resp.put("done", false);
+            return ResponseEntity.ok().headers(nocache).body(resp);
+        }
+
+        // paymentId 확보 시 DB 먼저 확인
+        Long invoiceId = parseInvoiceId(paymentId);
+        Optional<PlanInvoiceEntity> invOpt = (invoiceId != null)
+                ? invoiceRepo.findById(invoiceId)
+                : Optional.empty();
 
         if (invOpt.isPresent()) {
             PlanInvoiceEntity inv = invOpt.get();
@@ -179,57 +252,64 @@ public class PlanPaymentController {
                                 "done",      true
                         ));
             }
-
-            var r = pgSvc.safeLookup(paymentId);
-            String s = String.valueOf(r.status()).toUpperCase();
-
-            boolean gwDone = switch (s) {
-                case "PAID", "SUCCEEDED", "SUCCESS", "PARTIAL_PAID", "FAILED", "CANCELED", "CANCELLED" -> true;
-                case "NOT_FOUND", "PENDING", "ACCEPTED", "READY" -> false; // 생성 전/승인대기/준비 상태는 계속 폴링
-                default -> false;
-            };
-
-            return ResponseEntity.ok()
-                    .headers(nocache)
-                    .body(Map.of(
-                            "paymentId", paymentId,
-                            "invoiceId", inv.getPiId(),
-                            "status",    s,
-                            "done",      gwDone,
-                            "raw",       r.rawJson()
-                    ));
         }
 
+        // DB로 확정되지 않은 경우 게이트웨이 조회(단, 무조건 paymentId 사용)
         var r = pgSvc.safeLookup(paymentId);
         String s = String.valueOf(r.status()).toUpperCase();
 
+        // ✅ NOT_FOUND도 종료로 간주하여 폴링 중단
         boolean gwDone = switch (s) {
-            case "PAID", "SUCCEEDED", "SUCCESS", "PARTIAL_PAID", "FAILED", "CANCELED", "CANCELLED" -> true;
-            case "NOT_FOUND", "PENDING", "ACCEPTED", "READY" -> false; // 생성 전/승인대기/준비 상태는 계속 폴링
+            case "PAID", "SUCCEEDED", "SUCCESS", "PARTIAL_PAID", "FAILED", "CANCELED", "CANCELLED", "NOT_FOUND" -> true;
+            case "PENDING", "ACCEPTED", "READY" -> false;
             default -> false;
         };
 
-        return ResponseEntity.ok()
-                .headers(nocache)
-                .body(Map.of(
-                        "paymentId", r.paymentId(),
-                        "status",    s,
-                        "done",      gwDone,
-                        "raw",       r.rawJson()
-                ));
+        Map<String,Object> resp = new LinkedHashMap<>();
+        resp.put("paymentId", StringUtils.hasText(r.paymentId()) ? r.paymentId() : paymentId);
+        if (invoiceId != null) resp.put("invoiceId", invoiceId);
+        resp.put("status", s);
+        resp.put("done", gwDone);
+        resp.put("raw", r.rawJson());
+
+        return ResponseEntity.ok().headers(nocache).body(resp);
     }
 
-    // ✅ 새로운 ID 패턴: inv{digits}-u{uuid...}
-    private static final Pattern INV_PAT = Pattern.compile("^inv(\\d+)-u[0-9a-fA-F-]{8,}$");
+    // ====== ID 판별/파싱 유틸 ======
+
+    // 기존 paymentId 패턴: inv{digits}-u{uuid...}
+    private static final Pattern PAYMENT_ID_PAT = Pattern.compile("^inv(\\d+)-u[0-9a-fA-F-]{8,}$");
+    // 새 orderId 패턴: inv{digits}-ts{epochMillis}
+    private static final Pattern ORDER_ID_PAT   = Pattern.compile("^inv\\d+-ts\\d+$");
+
+    private static boolean isPaymentId(String s) { return s != null && PAYMENT_ID_PAT.matcher(s).matches(); }
+    private static boolean isOrderId(String s) { return s != null && ORDER_ID_PAT.matcher(s).matches(); }
 
     private static Long parseInvoiceId(String paymentId) {
         if (!StringUtils.hasText(paymentId)) return null;
-        Matcher m = INV_PAT.matcher(paymentId);
+        Matcher m = PAYMENT_ID_PAT.matcher(paymentId);
         if (m.matches()) {
             try { return Long.parseLong(m.group(1)); }
             catch (Exception ignore) { return null; }
         }
         return null;
+    }
+
+    private static Long parseInvoiceIdFromOrderId(String orderId) {
+        if (!isOrderId(orderId)) return null;
+        try {
+            String num = orderId.replaceFirst("^inv","").split("-ts")[0].replaceAll("[^0-9]","");
+            return Long.parseLong(num);
+        } catch (Exception e) { return null; }
+    }
+
+    /** orderId(inv{invoice}-ts{millis})에서 millis 추출 */
+    private static Long parseTsFromOrderId(String orderId) {
+        if (!isOrderId(orderId)) return null;
+        try {
+            String ts = orderId.substring(orderId.indexOf("-ts") + 3);
+            return Long.parseLong(ts);
+        } catch (Exception e) { return null; }
     }
 
     private static long toLongAmount(java.math.BigDecimal b) {

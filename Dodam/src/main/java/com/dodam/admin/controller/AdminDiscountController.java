@@ -4,6 +4,8 @@ import com.dodam.admin.dto.DiscountDto;
 import com.dodam.discount.entity.Discount;
 import com.dodam.discount.service.DiscountService;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,6 +14,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/admin/discounts")
 @RequiredArgsConstructor
+@ConditionalOnProperty(name="feature.discount.enabled", havingValue="true")
+
 public class AdminDiscountController {
 
     private final DiscountService discountService;

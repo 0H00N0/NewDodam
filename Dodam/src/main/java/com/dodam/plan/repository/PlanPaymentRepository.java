@@ -3,6 +3,8 @@ package com.dodam.plan.repository;
 import com.dodam.member.entity.MemberEntity;
 import com.dodam.plan.Entity.PlanPaymentEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -13,32 +15,34 @@ public interface PlanPaymentRepository extends JpaRepository<PlanPaymentEntity, 
     boolean existsByMidAndPayKey(String mid, String payKey);
     List<PlanPaymentEntity> findByMidOrderByPayIdDesc(String mid);
     Optional<PlanPaymentEntity> findTop1ByMidOrderByPayIdDesc(String mid);
-    /** 특정 회원(mid)의 가장 최근 결제수단 */
     Optional<PlanPaymentEntity> findTopByMidOrderByPayIdDesc(String mid);
 
-    /** billingKey(payKey)로 결제수단 찾기 */
     Optional<PlanPaymentEntity> findByPayKey(String payKey);
-
-    /** 회원 + billingKey 조합으로 찾기 (추가 안전장치용) */
     Optional<PlanPaymentEntity> findByMidAndPayKey(String mid, String payKey);
 
+    // ✅ member 조인 제거: 엔티티에 실제 존재하는 필드(mid, payCustomer)만 조건에 사용
+    @Query("""
+       select p
+         from PlanPaymentEntity p
+        where p.mid = :key
+           or p.payCustomer = :key
+        order by p.payId desc
+    """)
+    List<PlanPaymentEntity> findAllByAnyKey(@Param("key") String key);
+
+    /* ---- 편의 메서드 ---- */
     default Optional<PlanPaymentEntity> findByMemberAndPayKey(MemberEntity member, String payKey) {
         return findByMidAndPayKey(member.getMid(), payKey);
     }
-
     default Optional<PlanPaymentEntity> findByMemberMidAndPayKey(String mid, String payKey) {
         return findByMidAndPayKey(mid, payKey);
     }
-
     default List<PlanPaymentEntity> findByMid(String mid) {
         return findByMidOrderByPayIdDesc(mid);
     }
-
     default Optional<PlanPaymentEntity> findDefaultByMember(String mid) {
         List<PlanPaymentEntity> list = findByMidOrderByPayIdDesc(mid);
         if (list == null || list.isEmpty()) return Optional.empty();
-
-        // 1) defaultYn = 'Y' 우선
         for (var p : list) {
             try {
                 var m = PlanPaymentEntity.class.getMethod("getDefaultYn");
@@ -46,7 +50,6 @@ public interface PlanPaymentRepository extends JpaRepository<PlanPaymentEntity, 
                 if (v instanceof String s && "Y".equalsIgnoreCase(s)) return Optional.of(p);
             } catch (Throwable ignore) { }
         }
-        // 2) isDefault = true
         for (var p : list) {
             try {
                 var m = PlanPaymentEntity.class.getMethod("isDefault");
@@ -54,7 +57,6 @@ public interface PlanPaymentRepository extends JpaRepository<PlanPaymentEntity, 
                 if (v instanceof Boolean b && b) return Optional.of(p);
             } catch (Throwable ignore) { }
         }
-        // 3) fallback: 최신 1건
         return Optional.of(list.get(0));
     }
 }
