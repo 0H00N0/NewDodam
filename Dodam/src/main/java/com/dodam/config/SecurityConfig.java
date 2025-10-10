@@ -56,7 +56,8 @@ public class SecurityConfig {
                 "/api/reviews/count",
                 "/api/products/**",
                 "/admin/**", 
-                "/cart"
+                "/cart",
+                "/rent/**"
             ))
             // 인가 정책
             .authorizeHttpRequests(auth -> auth
@@ -74,6 +75,7 @@ public class SecurityConfig {
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/events/**").permitAll()
+                .requestMatchers("/rent/**").authenticated()
 
                 // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
                 .requestMatchers("/board/**").authenticated()
