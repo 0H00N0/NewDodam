@@ -40,6 +40,8 @@ public interface PlanPaymentGatewayService {
     /** 결제 단건 조회 — paymentId 또는 orderId 모두 허용 */
     PlanLookupResult lookup(String anyId);
 
+    JsonNode getBillingKey(String billingKey);
+    
     /* ===== 결과 타입 (레거시) ===== */
     record PayResult(String paymentId, String status, String raw) {}
     record LookupResult(String paymentId, String status, String raw) {}

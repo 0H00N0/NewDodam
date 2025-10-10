@@ -1,7 +1,7 @@
-// src/main/java/com/dodam/plan/webhook/PlanWebhookProcessingService.java
 package com.dodam.plan.webhook;
 
 import com.dodam.plan.Entity.PlanInvoiceEntity;
+import com.dodam.plan.Entity.PlanPaymentEntity;
 import com.dodam.plan.dto.PlanLookupResult;
 import com.dodam.plan.enums.PlanEnums;
 import com.dodam.plan.repository.PlanInvoiceRepository;
@@ -37,21 +37,18 @@ public class PlanWebhookProcessingService {
     private final PlanPaymentRepository paymentRepo;
     private final ObjectMapper mapper;
 
+    /* ======================== 결제 웹훅 ========================= */
     @Async("webhookExecutor")
     @Transactional
     public void process(String type, String paymentId, String transactionId, String status, String rawBody) {
         try {
             log.info("[WebhookJob] type={}, paymentId={}, txId={}, status={}", type, paymentId, transactionId, status);
 
-            // 0) PortOne 조회 (정상 JSON만 사용)
             PlanLookupResult look = gateway.safeLookup(StringUtils.hasText(paymentId) ? paymentId : transactionId);
             String lookJson = (look != null && StringUtils.hasText(look.rawJson())
                     && !look.rawJson().contains("\"error\":\"no paymentId\"")) ? look.rawJson() : null;
-
-            // ▶ richJson: 영수증/카드필드가 더 많이 담긴 것을 우선
             String richJson = preferRicherJson(lookJson, rawBody);
 
-            // 1) 결제/주문 식별자
             final String resolvedPayId = firstNonBlank(
                     (look != null ? look.paymentId() : null),
                     safePick(richJson, "data.paymentId", "id", "paymentId"),
@@ -64,42 +61,30 @@ public class PlanWebhookProcessingService {
                     safePick(richJson, "data.paymentId")
             );
 
-            // 2) 인보이스 찾기
             Optional<PlanInvoiceEntity> optInv = findInvoiceByOrderFirst(orderId, resolvedPayId);
-
-            // 3) 상태 판정
             final String stStrict = normUp(firstNonBlank(
                     safePickStrict(richJson, "status", "payment.status", "data.status", "items[0].status"),
                     status
             ));
             final String stLookup = normUp((look != null ? look.status() : null));
             String st = (StringUtils.hasText(stStrict) ? stStrict : stLookup);
-
             if (!StringUtils.hasText(st) || "NOT_FOUND".equals(st)) {
-                String stFromItems = normUp(firstNonBlank(
-                        safePickStrict(richJson, "items[0].status")
-                ));
+                String stFromItems = normUp(firstNonBlank(safePickStrict(richJson, "items[0].status")));
                 if (StringUtils.hasText(stFromItems)) st = stFromItems;
             }
-
-            boolean paid   = isPaid(st);
+            boolean paid = isPaid(st);
             boolean failed = isFailed(st);
 
-            // 3-1) 영수증 URL (1차: richJson)
             final String receiptUrl = tryReceipt(richJson);
-
-            // 3-2) 카드메타 (billingKey 기준 선반영)
             final String payKey = safePick(richJson, "billingKey","billing_key","payKey");
-            final CardMeta cm   = parseCardMeta(richJson);
+            final CardMeta cm = parseCardMeta(richJson);
             if (StringUtils.hasText(payKey)) {
                 persistCardMetaByKey(payKey, cm.bin, cm.brand, cm.last4, cm.pg);
             }
 
-            // 4) 금액/시간 보조매칭
             if (optInv.isEmpty()) {
                 BigDecimal amount = tryBigDecimal(firstNonBlank(
-                        safePick(richJson, "amount.total", "amount", "data.amount.total", "items[0].amount.total")
-                ));
+                        safePick(richJson, "amount.total","amount","data.amount.total","items[0].amount.total")));
                 if (amount != null) {
                     Optional<PlanInvoiceEntity> alt = invoiceRepo.findRecentPendingSameAmount(amount, Duration.ofMinutes(20));
                     if (alt.isPresent()) {
@@ -120,7 +105,6 @@ public class PlanWebhookProcessingService {
             log.info("[WebhookDebug] mapped piId={}, resolvedPayId={}, orderId={}, status={}",
                     inv.getPiId(), resolvedPayId, orderId, st);
 
-            // 이미 PAID → UID 백필 + 종결 attempt 1회
             if (inv.getPiStat() == PlanEnums.PiStatus.PAID) {
                 if (!StringUtils.hasText(inv.getPiUid()) && StringUtils.hasText(resolvedPayId)) {
                     invoiceRepo.markPaidAndSetUidIfEmpty(inv.getPiId(), resolvedPayId, nowUtc());
@@ -135,7 +119,6 @@ public class PlanWebhookProcessingService {
             } else if (failed) {
                 billing.recordAttempt(inv.getPiId(), false, "WEBHOOK:" + st, resolvedPayId, receiptUrl, richJson);
             } else {
-                // 비종결 상태는 스킵 (중복 attempt 방지)
                 log.info("[WebhookJob] non-terminal ({}) → skip recordAttempt", st);
             }
 
@@ -144,12 +127,75 @@ public class PlanWebhookProcessingService {
         }
     }
 
-    /* ---------- JSON 우선 선택: 영수증/카드/pgTxId가 많은 쪽 ---------- */
+    /* ======================== 빌링키 웹훅 ========================= */
+    @Transactional
+    public void handleBillingKeyEvent(JsonNode root, boolean issued) {
+        try {
+            if (root == null || root.isEmpty()) {
+                log.info("[BillingKeyWebhook] root is empty → skip");
+                return;
+            }
+
+            JsonNode data = root.path("data");
+            String billingKey = firstNonBlank(
+                    data.path("id").asText(null),
+                    data.path("billingKey").path("id").asText(null),
+                    data.path("billing_key_id").asText(null)
+            );
+            String customerKey = firstNonBlank(
+                    data.path("customerKey").asText(null),
+                    data.path("customer").path("id").asText(null),
+                    data.path("customer_id").asText(null)
+            );
+
+            if (!StringUtils.hasText(billingKey)) {
+                log.warn("[BillingKeyWebhook] missing billingKey id");
+                return;
+            }
+
+            JsonNode detail = gateway.getBillingKey(billingKey);
+            String brand = text(detail.path("card"), "brand", "brandName");
+            String bin = text(detail.path("card"), "bin");
+            String last4 = text(detail.path("card"), "last4", "numberLast4");
+            String pg = text(detail, "pgProvider", "provider", "pg");
+            String status = text(detail, "status");
+            String mid = customerKey != null ? customerKey : "unknown";
+
+            Optional<PlanPaymentEntity> found = paymentRepo.findByMidAndPayKey(mid, billingKey);
+            PlanPaymentEntity entity = found.orElseGet(PlanPaymentEntity::new);
+            entity.setMid(mid);
+            entity.setPayKey(billingKey);
+            entity.setPayCustomer(customerKey);
+            entity.setPayBrand(brand);
+            entity.setPayBin(bin);
+            entity.setPayLast4(last4);
+            entity.setPayPg(pg);
+            entity.setPayRaw(detail.toPrettyString());
+            if (entity.getPayCreatedAt() == null)
+                entity.setPayCreatedAt(LocalDateTime.now());
+
+            paymentRepo.save(entity);
+            log.info("[BillingKeyWebhook] {} saved mid={} billingKey={} brand={} last4={}",
+                    issued ? "ISSUED" : "READY", mid, billingKey, brand, last4);
+
+        } catch (Exception e) {
+            log.error("[BillingKeyWebhook] process failed: {}", e.getMessage(), e);
+        }
+    }
+
+    /* ======================== 공통 유틸 ========================= */
+    private static String text(JsonNode n, String... keys) {
+        for (String k : keys) {
+            String v = n.path(k).asText(null);
+            if (StringUtils.hasText(v)) return v;
+        }
+        return null;
+    }
+
     private String preferRicherJson(String a, String b) {
         int sa = richnessScore(a);
         int sb = richnessScore(b);
-        if (sb > sa) return b;
-        return a != null ? a : b;
+        return (sb > sa) ? b : a;
     }
     private int richnessScore(String j) {
         if (!StringUtils.hasText(j)) return 0;
@@ -162,8 +208,6 @@ public class PlanWebhookProcessingService {
         if (low.contains("\"items\"")) s += 1;
         return s;
     }
-
-    /* ======== 헬퍼 ======== */
     private Optional<PlanInvoiceEntity> findInvoiceByOrderFirst(String orderId, String paymentId) {
         if (StringUtils.hasText(orderId)) {
             Long invId = tryParseInvoiceIdFromOrderId(orderId);
@@ -174,7 +218,6 @@ public class PlanWebhookProcessingService {
         }
         return findInvoice(paymentId);
     }
-
     private Optional<PlanInvoiceEntity> findInvoice(String anyId) {
         try {
             if (StringUtils.hasText(anyId)) {
@@ -186,7 +229,6 @@ public class PlanWebhookProcessingService {
         } catch (Exception ignore) {}
         return Optional.empty();
     }
-
     private Long tryParseInvoiceIdFromPaymentId(String paymentId) {
         try {
             if (paymentId != null && paymentId.startsWith("inv")) {
@@ -207,156 +249,110 @@ public class PlanWebhookProcessingService {
 
     private String firstNonBlank(String... v){ if(v==null)return null; for(String s:v) if(StringUtils.hasText(s)) return s; return null; }
 
-    private String safePick(String rawJson, String... keys){ try{
-        if(!StringUtils.hasText(rawJson))return null; JsonNode root=mapper.readTree(rawJson);
-        String v=pickFromNode(root,keys); if(StringUtils.hasText(v)) return v;
-        String[] withItems0=new String[keys.length]; for(int i=0;i<keys.length;i++) withItems0[i]="items[0]."+keys[i];
-        v=pickFromNode(root,withItems0); if(StringUtils.hasText(v)) return v;
-        if(root.isObject()){
-            for (Iterator<Map.Entry<String, JsonNode>> it = root.fields(); it.hasNext(); ) {
-                Map.Entry<String, JsonNode> e = it.next();
-                JsonNode n = e.getValue();
-                if (n.isTextual()) {
-                    String t = n.asText();
-                    if (t.startsWith("{") || t.startsWith("[")) {
-                        JsonNode nested = mapper.readTree(t);
-                        v = pickFromNode(nested, keys);
-                        if (StringUtils.hasText(v)) return v;
-                        v = pickFromNode(nested, withItems0);
-                        if (StringUtils.hasText(v)) return v;
-                    }
-                }
-            }
-        }
-    }catch(Exception ignore){} return null; }
+    private String safePick(String rawJson, String... keys){
+        try{
+            if(!StringUtils.hasText(rawJson))return null;
+            JsonNode root=mapper.readTree(rawJson);
+            String v=pickFromNode(root,keys); if(StringUtils.hasText(v)) return v;
+        }catch(Exception ignore){}
+        return null;
+    }
 
     private String safePickStrict(String rawJson, String... keys){
-        try{ if(!StringUtils.hasText(rawJson))return null; JsonNode root=mapper.readTree(rawJson);
-            String v=pickFromNode(root,keys); if(StringUtils.hasText(v)) return v;
-            String[] withItems0=new String[keys.length]; for(int i=0;i<keys.length;i++) withItems0[i]="items[0]."+keys[i];
-            return pickFromNode(root,withItems0);}catch(Exception ignore){} return null; }
+        try{
+            if(!StringUtils.hasText(rawJson))return null;
+            JsonNode root=mapper.readTree(rawJson);
+            return pickFromNode(root,keys);
+        }catch(Exception ignore){}
+        return null;
+    }
 
     private String pickFromNode(JsonNode root,String...keys){
-        for(String k:keys){ JsonNode n=getByDotted(root,k);
+        for(String k:keys){
+            JsonNode n=getByDotted(root,k);
             if(n!=null&&!n.isMissingNode()&&!n.isNull()&&n.isValueNode()){
-                String val=n.asText(null); if(StringUtils.hasText(val)) return val; }}
-        return null; }
+                String val=n.asText(null);
+                if(StringUtils.hasText(val)) return val;
+            }
+        }
+        return null;
+    }
 
     private JsonNode getByDotted(JsonNode root,String dotted){
-        String[] parts=dotted.split("\\."); JsonNode cur=root;
-        for(String p:parts){ if(cur==null) return null;
+        String[] parts=dotted.split("\\.");
+        JsonNode cur=root;
+        for(String p:parts){
+            if(cur==null) return null;
             int idxStart=p.indexOf('[');
-            if(idxStart>-1&&p.endsWith("]")){ String field=p.substring(0,idxStart);
-                String idxStr=p.substring(idxStart+1,p.length()-1); cur=cur.get(field);
-                if(cur==null||!cur.isArray()) return null; int i; try{i=Integer.parseInt(idxStr);}catch(Exception e){return null;}
-                cur=(i>=0&&i<cur.size())?cur.get(i):null; } else cur=cur.get(p);}
-        return cur; }
+            if(idxStart>-1&&p.endsWith("]")){
+                String field=p.substring(0,idxStart);
+                String idxStr=p.substring(idxStart+1,p.length()-1);
+                cur=cur.get(field);
+                if(cur==null||!cur.isArray()) return null;
+                int i;
+                try{i=Integer.parseInt(idxStr);}catch(Exception e){return null;}
+                cur=(i>=0&&i<cur.size())?cur.get(i):null;
+            } else cur=cur.get(p);
+        }
+        return cur;
+    }
 
     private BigDecimal tryBigDecimal(String s){
-        try{ if(!StringUtils.hasText(s)) return null;
-            String cleaned=s.replaceAll("[^0-9.\\-]",""); if(!StringUtils.hasText(cleaned)) return null;
-            return new BigDecimal(cleaned);}catch(Exception e){return null;}
+        try{
+            if(!StringUtils.hasText(s)) return null;
+            String cleaned=s.replaceAll("[^0-9.\\-]","");
+            if(!StringUtils.hasText(cleaned)) return null;
+            return new BigDecimal(cleaned);
+        }catch(Exception e){return null;}
     }
 
     private String tryReceipt(String rawJson){
-        try {
-            if (!StringUtils.hasText(rawJson)) return null;
-            JsonNode root = mapper.readTree(rawJson);
-
-            String direct = safePick(rawJson,
-                    "receiptUrl","receipt.url","card.receiptUrl",
-                    "pgResponse.receipt.url","pgResponse.receiptUrl","pgResponse.receipt.redirectUrl",
-                    "items[0].pgResponse.receipt.url","items[0].receiptUrl");
-            if (StringUtils.hasText(direct)) return direct;
-
-            String txId = firstNonBlank(
-                    safePick(rawJson, "payment.pgTxId","pgTxId","items[0].payment.pgTxId","items[0].pgTxId"));
-            if (StringUtils.hasText(txId)) {
-                return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+txId+"&ref=PX";
-            }
-
-            JsonNode pgResp = root.path("pgResponse");
-            if (!pgResp.isMissingNode()) {
-                if (pgResp.isTextual()) {
-                    JsonNode nested = mapper.readTree(pgResp.asText());
-                    String v = pickFromNode(nested, "receipt.url","receiptUrl","receipt.redirectUrl");
-                    if (StringUtils.hasText(v)) return v;
-                    JsonNode t = nested.get("transactionId");
-                    if (t != null && t.isValueNode() && StringUtils.hasText(t.asText()))
-                        return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+t.asText()+"&ref=PX";
-                } else {
-                    String v = pickFromNode(pgResp, "receipt.url","receiptUrl","receipt.redirectUrl");
-                    if (StringUtils.hasText(v)) return v;
-                    JsonNode t = pgResp.get("transactionId");
-                    if (t != null && t.isValueNode() && StringUtils.hasText(t.asText()))
-                        return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+t.asText()+"&ref=PX";
-                }
-            }
-
-            JsonNode items = root.get("items");
-            if (items != null && items.isArray()) {
-                for (JsonNode it : items) {
-                    String v = safePick(it.toString(),"pgResponse.receipt.url","pgResponse.receiptUrl","receipt.url","receiptUrl");
-                    if (StringUtils.hasText(v)) return v;
-                    String itTx = firstNonBlank(safePick(it.toString(),"payment.pgTxId","pgTxId"));
-                    if (StringUtils.hasText(itTx))
-                        return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+itTx+"&ref=PX";
-                    JsonNode pr = it.path("pgResponse");
-                    if (!pr.isMissingNode()) {
-                        if (pr.isTextual()) {
-                            JsonNode nested = mapper.readTree(pr.asText());
-                            v = pickFromNode(nested, "receipt.url","receiptUrl","receipt.redirectUrl");
-                            if (StringUtils.hasText(v)) return v;
-                            JsonNode t = nested.get("transactionId");
-                            if (t != null && t.isValueNode() && StringUtils.hasText(t.asText()))
-                                return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+t.asText()+"&ref=PX";
-                        } else {
-                            v = pickFromNode(pr, "receipt.url","receiptUrl","receipt.redirectUrl");
-                            if (StringUtils.hasText(v)) return v;
-                            JsonNode t = pr.get("transactionId");
-                            if (t != null && t.isValueNode() && StringUtils.hasText(t.asText()))
-                                return "https://dashboard-sandbox.tosspayments.com/receipt/redirection?transactionId="+t.asText()+"&ref=PX";
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[WebhookJob] tryReceipt parse error: {}", e.toString());
+        try{
+            if(!StringUtils.hasText(rawJson)) return null;
+            JsonNode root=mapper.readTree(rawJson);
+            String direct=safePick(rawJson,
+                    "receiptUrl","receipt.url","pgResponse.receipt.url","pgResponse.receiptUrl");
+            if(StringUtils.hasText(direct)) return direct;
+        }catch(Exception e){
+            log.warn("[WebhookJob] tryReceipt parse error: {}",e.toString());
         }
         return null;
     }
 
     private record CardMeta(String bin,String brand,String last4,String pg){}
-    private CardMeta parseCardMeta(String rawJson) {
-        try {
-            String last4 = firstNonBlank(
-                    safePick(rawJson, "method.card.last4","card.last4","card.lastFourDigits","items[0].method.card.last4"),
-                    tail4Digits(safePick(rawJson, "method.card.number","card.number","items[0].method.card.number"))
-            );
-            String bin = firstNonBlank(
-                    safePick(rawJson, "method.card.bin","card.bin","items[0].method.card.bin")
-            );
-            String brand = firstNonBlank(
-                    safePick(rawJson, "items[0].method.card.name"),
-                    safePick(rawJson, "method.card.company","card.company","items[0].method.card.issuer","items[0].method.card.company"),
-                    safePick(rawJson, "method.card.brand","card.brand","items[0].method.card.brand")
-            );
-            String pg = "TossPayments";
-            return new CardMeta(bin, brand, last4, pg);
-        } catch (Exception e) {
-            return new CardMeta(null, null, null, "TossPayments");
+
+    private CardMeta parseCardMeta(String rawJson){
+        try{
+            String last4=firstNonBlank(
+                    safePick(rawJson,"method.card.last4","card.last4","card.lastFourDigits"),
+                    tail4Digits(safePick(rawJson,"card.number")));
+            String bin=safePick(rawJson,"card.bin");
+            String brand=safePick(rawJson,"card.brand");
+            String pg="TossPayments";
+            return new CardMeta(bin,brand,last4,pg);
+        }catch(Exception e){
+            return new CardMeta(null,null,null,"TossPayments");
         }
     }
+
     private boolean persistCardMetaByKey(String payKey,String bin,String brand,String last4,String pg){
         if(!StringUtils.hasText(payKey)) return false;
-        return paymentRepo.findByPayKey(payKey).map(p->{ boolean changed=false;
+        return paymentRepo.findByPayKey(payKey).map(p->{
+            boolean changed=false;
             if(StringUtils.hasText(bin)&&!bin.equals(p.getPayBin())){p.setPayBin(bin);changed=true;}
             if(StringUtils.hasText(brand)&&!brand.equals(p.getPayBrand())){p.setPayBrand(brand);changed=true;}
             if(StringUtils.hasText(last4)&&!last4.equals(p.getPayLast4())){p.setPayLast4(last4);changed=true;}
             if(StringUtils.hasText(pg)&&!pg.equals(p.getPayPg())){p.setPayPg(pg);changed=true;}
-            if(changed) paymentRepo.save(p); return changed;}).orElse(false);
+            if(changed) paymentRepo.save(p);
+            return changed;
+        }).orElse(false);
     }
-    private static String tail4Digits(String s){ if(!StringUtils.hasText(s)) return null;
-        String d=s.replaceAll("\\D",""); return (d.length()>=4)?d.substring(d.length()-4):null; }
+
+    private static String tail4Digits(String s){
+        if(!StringUtils.hasText(s)) return null;
+        String d=s.replaceAll("\\D","");
+        return (d.length()>=4)?d.substring(d.length()-4):null;
+    }
+
     private static LocalDateTime nowUtc(){ return LocalDateTime.now(ZoneOffset.UTC); }
 }

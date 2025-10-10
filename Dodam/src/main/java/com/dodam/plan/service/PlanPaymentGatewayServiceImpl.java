@@ -409,4 +409,21 @@ public class PlanPaymentGatewayServiceImpl implements PlanPaymentGatewayService 
             return Optional.empty();
         }
     }
+    
+    @Override
+    public JsonNode getBillingKey(String billingKey) {
+        try {
+            String url = props.getBaseUrl() + "/billing-keys/" + billingKey;
+            var client = org.springframework.web.client.RestClient.create();
+            String json = client.get()
+                    .uri(url)
+                    .header("Authorization", props.authHeader())
+                    .retrieve()
+                    .body(String.class);
+            return mapper.readTree(json);
+        } catch (Exception e) {
+            log.error("[Gateway] getBillingKey({}) failed: {}", billingKey, e.toString());
+            throw new RuntimeException("PortOne billing-key 조회 실패");
+        }
+    }
 }
