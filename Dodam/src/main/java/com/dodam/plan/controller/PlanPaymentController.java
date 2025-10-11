@@ -9,13 +9,16 @@ import com.dodam.plan.repository.PlanInvoiceRepository;
 import com.dodam.plan.repository.PlanPaymentRepository;
 import com.dodam.plan.service.PlanBillingService;
 import com.dodam.plan.service.PlanPaymentGatewayService;
+import com.dodam.plan.service.PlanPortoneClientService;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpSession;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.scheduling.concurrent.CustomizableThreadFactory;
+import org.springframework.security.core.Authentication;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,6 +38,8 @@ public class PlanPaymentController {
     private final PlanPaymentRepository paymentRepo;
     private final PlanPaymentGatewayService pgSvc;
     private final PlanBillingService billingSvc;
+    
+    private final PlanPortoneClientService portoneClient;
 
     @Value("${payments.confirm.immediate.enabled:false}")
     private boolean confirmImmediate;
@@ -273,6 +278,46 @@ public class PlanPaymentController {
         resp.put("raw", r.rawJson());
 
         return ResponseEntity.ok().headers(nocache).body(resp);
+    }
+    
+    /** ✅ 결제 취소(부분/전액) */
+    @PostMapping("/{paymentId}/cancel")
+    public ResponseEntity<Map<String,Object>> cancelPayment(
+            @PathVariable("paymentId") String paymentId,
+            @RequestBody CancelReq req,
+            Authentication auth
+    ) {
+        final String mid = (auth != null ? auth.getName() : null);
+        if (mid == null || mid.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "LOGIN_REQUIRED"));
+        }
+
+        var r = portoneClient.cancelPayment(
+                paymentId,
+                req.getAmount(), req.getTaxFreeAmount(), req.getVatAmount(),
+                (req.getReason() != null ? req.getReason() : "user_requested")
+        );
+
+        // 우리 DB 인보이스도 정리 (있는 경우)
+        invoiceRepo.findByPiUid(paymentId).ifPresent(inv -> {
+            // 부분취소/전액취소를 세밀히 반영하려면 별도 금액/상태 컬럼 설계를 보강하세요.
+            inv.setPiStat(com.dodam.plan.enums.PlanEnums.PiStatus.CANCELED);
+            invoiceRepo.save(inv);
+        });
+
+        return ResponseEntity.ok(Map.of(
+                "status", r.status(),
+                "raw", r.raw()
+        ));
+    }
+
+    @Data
+    public static class CancelReq {
+        private Long amount;        // null이면 전액
+        private Long taxFreeAmount; // 선택
+        private Long vatAmount;     // 선택
+        private String reason;      // 필수(문서상)
     }
 
     // ====== ID 판별/파싱 유틸 ======

@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -16,6 +18,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -30,7 +36,7 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     // PortOne 권장: 최소 60초 읽기 타임아웃
     private Duration timeout() { return Duration.ofSeconds(60); }
     private static String enc(String v) { return URLEncoder.encode(v, StandardCharsets.UTF_8); }
-    private static boolean hasText(String s) { return s != null && !s.isBlank(); }
+    private boolean hasText(String s) { return StringUtils.hasText(s); }
 
     /** dotted path 텍스트 추출 (없으면 null) */
     private String jst(JsonNode n, String dotted) {
@@ -320,5 +326,76 @@ public class PlanPortoneClientServiceImpl implements PlanPortoneClientService {
     @Override
     public java.util.Map<String, Object> confirmIssueBillingKey(String billingIssueToken) {
         throw new UnsupportedOperationException("confirmIssueBillingKey is not implemented in this service.");
+    }
+    
+    //---------- 결제 취소 --------
+    @Override
+    public CancelResponse cancelPayment(String paymentId,
+                                        Long amount,
+                                        Long taxFreeAmount,
+                                        Long vatAmount,
+                                        String reason) {
+        try {
+            Map<String,Object> body = new HashMap<>();
+            if (props.getStoreId() != null) body.put("storeId", props.getStoreId());
+            if (amount != null) body.put("amount", amount);
+            if (taxFreeAmount != null) body.put("taxFreeAmount", taxFreeAmount);
+            if (vatAmount != null) body.put("vatAmount", vatAmount);
+            body.put("reason", (reason != null && !reason.isBlank()) ? reason : "user_requested");
+
+            String raw = portoneWebClient.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/payments/{paymentId}/cancel").build(paymentId))
+                    .header("Authorization", props.authHeader())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromValue(body))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            JsonNode r = mapper.readTree(raw == null ? "{}" : raw);
+            // v2 응답: cancellation 객체 안에 상태가 담김 (필드명은 계속 확장 가능성 있어 raw도 함께 보관)
+            String status = jst(r, "cancellation.status");
+            if (!hasText(status)) status = jst(r, "status");
+            if (!hasText(status)) status = "UNKNOWN";
+
+            log.info("[PortOne] cancel paymentId={} -> {}", paymentId, status);
+            return new CancelResponse(status, raw);
+        } catch (Exception e) {
+            log.warn("[PortOne] cancel failed paymentId={}, ex={}", paymentId, e.toString());
+            return new CancelResponse("ERROR", null);
+        }
+    }
+
+    @Override
+    public CancelSchedulesResponse cancelPaymentSchedules(String billingKey, List<String> scheduleIds) {
+        try {
+            Map<String,Object> body = new HashMap<>();
+            if (props.getStoreId() != null) body.put("storeId", props.getStoreId());
+            if (billingKey != null && !billingKey.isBlank()) body.put("billingKey", billingKey);
+            if (scheduleIds != null && !scheduleIds.isEmpty()) body.put("scheduleIds", scheduleIds);
+
+            String raw = portoneWebClient
+                    .method(HttpMethod.DELETE)
+                    .uri("/payment-schedules")
+                    .header("Authorization", props.authHeader())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromValue(body))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            JsonNode r = mapper.readTree(raw == null ? "{}" : raw);
+            List<String> revoked = new ArrayList<>();
+            JsonNode arr = r.path("revokedScheduleIds");
+            if (arr.isArray()) arr.forEach(n -> revoked.add(n.asText()));
+
+            String revokedAt = jst(r, "revokedAt");
+            log.info("[PortOne] unschedule billingKey={} revoked={}", billingKey, revoked);
+            return new CancelSchedulesResponse(revoked, revokedAt, raw);
+        } catch (Exception e) {
+            log.warn("[PortOne] unschedule failed billingKey={}, ex={}", billingKey, e.toString());
+            return new CancelSchedulesResponse(List.of(), null, null);
+        }
     }
 }

@@ -33,6 +33,17 @@ public interface PlanMemberRepository extends JpaRepository<PlanMember, Long> {
 	 */
 	Optional<PlanMember> findByMember_Mnum(Long mnum);
 	
+	/*결제 취소 관련*/
+	@Query("""
+	        select m
+	          from PlanMember m
+	         where m.member.mid = :mid
+	           and m.pmStat = com.dodam.plan.enums.PlanEnums$PmStatus.ACTIVE
+	           and (m.pmTermStart is null or m.pmTermStart <= :now)
+	           and (m.pmTermEnd   is null or m.pmTermEnd   >= :now)
+	    """)
+	Optional<PlanMember> findActiveByMid(@Param("mid") String mid, @Param("now") LocalDateTime now);
+	
 	/**
      * 기존 호출 시그니처를 유지: (pmId, now)
      * now 파라미터는 쿼리에서 사용하지 않지만, nativeQuery 이므로 검증 에러가 나지 않습니다.

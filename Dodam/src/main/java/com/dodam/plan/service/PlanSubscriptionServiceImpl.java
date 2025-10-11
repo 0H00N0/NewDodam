@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -106,11 +107,6 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         String paymentId = "inv" + invoice.getPiId() + "-ts" + System.currentTimeMillis();
         String orderName = "Dodam Subscription";
 
-        // ❌ (삭제됨) orderId를 piUid에 선저장하지 않음
-        // invoice.setPiUid(paymentId);
-
-        // timeToPayUtc는 기존 로직에서 3초 후로 호출하고 있어 confirm로 흘러가지만,
-        // 향후 예약 결제를 원하면 충분히 미래 시점으로 넘기면 schedules 로 자동 분기된다.
         portoneClient.scheduleByBillingKey(
                 paymentId,
                 billingKey,
@@ -131,11 +127,10 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         resp.put("status", status);
 
         if (isPaid(status)) {
-            // 성공 시 provider paymentId를 얻을 수 있으면 piUid에 기록
             String providerPaymentId = firstNonBlank(
                     result.path("id").asText(null),
                     result.at("/payment/id").asText(null),
-                    result.at("/items/0/id").asText(null)  // 리스트 형태 보정
+                    result.at("/items/0/id").asText(null)
             );
 
             invoice.setPiStat(PiStatus.PAID);
@@ -148,10 +143,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             activateInvoice(invoice, termMonths);
 
             try {
-                // 이번 결제 응답으로 메타 업데이트 (이번 결제수단만)
                 updatePaymentCardMetaIfPresent(payment, result);
-
-                // byOrder 상세로 보강
                 JsonNode byOrder = portoneClient.getPaymentByOrderId(paymentId);
                 updatePaymentCardMetaIfPresent(payment, byOrder);
             } catch (Exception e) {
@@ -323,7 +315,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         return chargeByBillingKeyAndConfirm(invoice.getPiId(), mid, months);
     }
 
-    // ---- helpers ----
+    // ---------- helpers ----------
     private void updatePaymentCardMetaIfPresent(PlanPaymentEntity payment, JsonNode root) {
         if (payment == null || root == null || root.isMissingNode()) return;
 
@@ -425,5 +417,56 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
     private JsonNode scheduleNowPlusSeconds(String paymentId, String billingKey, long amount, String currency, String customerId, String orderName, int plusSeconds) {
         Instant payAt = Instant.now().plusSeconds(Math.max(plusSeconds, 1));
         return portoneClient.scheduleByBillingKey(paymentId, billingKey, amount, currency, customerId, orderName, payAt);
+    }
+
+    // ✅ 다음 결제 예약 해지 (현재 기간 유지)
+    @Override
+    @Transactional
+    public CancelNextResult cancelNextRenewal(String mid, String reason) {
+        if (!StringUtils.hasText(mid)) {
+            throw new IllegalStateException("LOGIN_REQUIRED");
+        }
+        final LocalDateTime now = LocalDateTime.now();
+
+        // 활성 구독
+        PlanMember active = planMemberRepo.findActiveByMid(mid, now)
+                .orElseThrow(() -> new IllegalStateException("ACTIVE_SUBSCRIPTION_NOT_FOUND"));
+
+        // billingKey 확보 (PlanMember.payment → 실패 시 최신 결제수단으로 백업 조회)
+        String billingKey = (active.getPayment() != null ? active.getPayment().getPayKey() : null);
+        if (!StringUtils.hasText(billingKey)) {
+            billingKey = paymentRepo.findTopByMidOrderByPayIdDesc(mid)
+                    .map(PlanPaymentEntity::getPayKey)
+                    .orElse(null);
+        }
+        if (!StringUtils.hasText(billingKey)) {
+            throw new IllegalStateException("BILLING_KEY_NOT_FOUND");
+        }
+
+        // (이 프로젝트에는 autoRenew 필드가 없음) → 취소 의사 표기만 남김
+        boolean autoRenewDisabled = false;   // 항상 false (필드가 없으므로)
+        active.setPmCancelCheck(true);
+        planMemberRepo.save(active);
+
+        // 다가오는 인보이스 취소 (PENDING/READY, 미래 시작분)
+        List<PlanInvoiceEntity> upcoming = invoiceRepo.findUpcomingPendingByPmId(active.getPmId(), now);
+        boolean upcomingCanceled = false;
+        for (PlanInvoiceEntity inv : upcoming) {
+            inv.setPiStat(PiStatus.CANCELED);
+            // inv.setUpdatedAt(now); // ❌ 해당 필드 없음 → 제거
+            invoiceRepo.save(inv);
+            upcomingCanceled = true;
+        }
+
+        // 포트원 예약 해지 (billingKey 기준 전체)
+        var pg = portoneClient.cancelPaymentSchedules(billingKey, null);
+        boolean pgScheduleCanceled = pg.revokedScheduleIds() != null && !pg.revokedScheduleIds().isEmpty();
+
+        log.info("[CancelNext] mid={}, billingKey={}, upcomingCanceled={}, pgRevoked={}",
+                mid, billingKey, upcomingCanceled, pg.revokedScheduleIds());
+
+        String msg = (!upcomingCanceled && !pgScheduleCanceled) ? "NO_CHANGE" : "OK";
+
+        return new CancelNextResult(autoRenewDisabled, upcomingCanceled, pgScheduleCanceled, msg);
     }
 }

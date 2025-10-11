@@ -2,6 +2,7 @@ package com.dodam.plan.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -50,6 +51,19 @@ public interface PlanPortoneClientService {
     JsonNode getPaymentByOrderId(String orderId);
     JsonNode findPaymentByOrderId(String orderId);
     Optional<JsonNode> findPaymentByExactOrderId(String orderId);
+    
+    /** 결제 취소(부분/전액) */
+    CancelResponse cancelPayment(String paymentId,
+                                 Long amount,
+                                 Long taxFreeAmount,
+                                 Long vatAmount,
+                                 String reason);
+
+    /** 결제 예약 해지(billingKey 기준 또는 scheduleIds 기준) */
+    CancelSchedulesResponse cancelPaymentSchedules(String billingKey, List<String> scheduleIds);
+
+    record CancelResponse(String status, String raw) {}
+    record CancelSchedulesResponse(List<String> revokedScheduleIds, String revokedAt, String raw) {}
 
     enum PaymentStatus { PENDING, PAID, SUCCEEDED, FAILED, CANCELED, ERROR, NOT_FOUND, UNKNOWN }
 

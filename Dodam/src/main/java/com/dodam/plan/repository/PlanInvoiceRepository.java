@@ -74,4 +74,17 @@ public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, 
         LocalDateTime from = LocalDateTime.now().minus(within == null ? Duration.ofMinutes(10) : within);
         return findRecentPendingSameAmountSimple(PiStatus.PENDING, amount, from);
     }
+    
+    /*결제 취소 관련*/
+    @Query("""
+            select i
+              from PlanInvoiceEntity i
+             where i.planMember.pmId = :pmId
+               and i.piStart > :now
+               and i.piStat in (com.dodam.plan.enums.PlanEnums$PiStatus.PENDING,
+                                com.dodam.plan.enums.PlanEnums$PiStatus.READY)
+             order by i.piStart asc
+        """)
+    List<PlanInvoiceEntity> findUpcomingPendingByPmId(@Param("pmId") Long pmId,
+                                                      @Param("now") LocalDateTime now);
 }

@@ -1,4 +1,3 @@
-// src/main/java/com/dodam/plan/controller/PlanSubscriptionController.java
 package com.dodam.plan.controller;
 
 import com.dodam.member.entity.MemberEntity;
@@ -9,11 +8,14 @@ import com.dodam.plan.enums.PlanEnums.PiStatus;
 import com.dodam.plan.enums.PlanEnums.PmBillingMode;
 import com.dodam.plan.enums.PlanEnums.PmStatus;
 import com.dodam.plan.repository.*;
+import com.dodam.plan.service.PlanPortoneClientService;
 import com.dodam.plan.service.PlanSubscriptionService;
 import jakarta.servlet.http.HttpSession;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -39,6 +41,7 @@ public class PlanSubscriptionController {
     private final MemberRepository memberRepo;
 
     private final PlanSubscriptionService subscriptionService;
+    private final PlanPortoneClientService portoneClient;
 
     /** 인보이스만 만들고 끝(기존 로직 유지) */
     @PostMapping(value = "/start", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -124,23 +127,19 @@ public class PlanSubscriptionController {
             pm = planMemberRepo.save(pm);
             log.info("[subscriptions/start] PlanMember created mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
         } else {
-            // ✅ 기존 PlanMember가 있는 경우, 이번 결제에 선택한 카드로 갱신 (핵심 수정)
             boolean updated = false;
             if (pm.getPayment() == null || !pm.getPayment().getPayId().equals(payment.getPayId())) {
                 pm.setPayment(payment);
                 updated = true;
                 log.info("[subscriptions/start] PlanMember payment updated mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
             }
-            // (선택) 플랜/약정/가격도 요청값과 다르면 동기화
             if (!pm.getPlan().getPlanId().equals(plan.getPlanId())) { pm.setPlan(plan); updated = true; }
             if (!pm.getTerms().getPtermId().equals(terms.getPtermId())) { pm.setTerms(terms); updated = true; }
             if (!pm.getPrice().getPpriceId().equals(price.getPpriceId())) { pm.setPrice(price); updated = true; }
-            if (updated) {
-                planMemberRepo.save(pm);
-            }
+            if (updated) planMemberRepo.save(pm);
         }
 
-        // 6) 멱등 체크 (최근 10분 내 동일 금액/통화 PENDING)
+        // 6) 멱등 체크
         final LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
         final LocalDateTime from = now.minusMinutes(10);
         var recentOpt = invoiceRepo.findRecentPendingSameAmount(mid, PiStatus.PENDING, amount, currency, from, now);
@@ -155,7 +154,7 @@ public class PlanSubscriptionController {
             body.put("currency", inv.getPiCurr());
             body.put("start", inv.getPiStart());
             body.put("end", inv.getPiEnd());
-            body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null); // 디버깅용 반환
+            body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null);
             return ResponseEntity.ok(body);
         }
 
@@ -179,14 +178,11 @@ public class PlanSubscriptionController {
         body.put("currency", inv.getPiCurr());
         body.put("start", inv.getPiStart());
         body.put("end", inv.getPiEnd());
-        body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null); // 디버깅용 반환
+        body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null);
         return ResponseEntity.ok(body);
     }
 
-    /**
-     * ✅ (신규) 인보이스를 바로 빌링키로 결제 트리거하고, 폴링으로 확정까지 처리
-     *  - 로컬/샌드박스 환경에서 웹훅이 localhost로 못 들어오는 문제를 해결
-     */
+    /** ✅ 인보이스를 바로 빌링키로 결제 트리거하고, 폴링으로 확정까지 처리 */
     @PostMapping(value = "/charge-and-confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
     public ResponseEntity<?> chargeAndConfirm(@RequestBody PlanSubscriptionStartReq req, HttpSession session) {
@@ -206,5 +202,34 @@ public class PlanSubscriptionController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "INTERNAL_SERVER_ERROR"));
         }
+    }
+
+    /** ✅ 다음 결제 예약 해지 (현재 이용기간 유지) */
+    @PostMapping("/cancel-renewal")
+    public ResponseEntity<?> cancelNextRenewal(@RequestBody CancelRenewalReq req, Authentication auth) {
+        final String mid = (auth != null ? auth.getName() : null);
+        if (!StringUtils.hasText(mid)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "LOGIN_REQUIRED"));
+        }
+        var r = subscriptionService.cancelNextRenewal(mid, req.getReason());
+        if ("NO_CHANGE".equals(r.message())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "autoRenewDisabled", r.autoRenewDisabled(),
+                    "upcomingInvoiceCanceled", r.upcomingInvoiceCanceled(),
+                    "pgScheduleCanceled", r.pgScheduleCanceled(),
+                    "message", r.message()
+            ));
+        }
+        return ResponseEntity.ok(Map.of(
+                "autoRenewDisabled", r.autoRenewDisabled(),
+                "upcomingInvoiceCanceled", r.upcomingInvoiceCanceled(),
+                "pgScheduleCanceled", r.pgScheduleCanceled(),
+                "message", r.message()
+        ));
+    }
+
+    @Data
+    public static class CancelRenewalReq {
+        private String reason;
     }
 }

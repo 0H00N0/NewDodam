@@ -12,7 +12,6 @@ import java.time.LocalDateTime;
     name = "PLANPAYMENT",
     uniqueConstraints = {
         @UniqueConstraint(name = "UK_PLANPAYMENT_MID_KEY", columnNames = {"mid", "payKey"})
-        // 만약 payKey 단독 유니크라면 위 줄 대신 @Column(unique=true) on payKey 로 사용하세요.
     }
 )
 @SequenceGenerator(
@@ -22,10 +21,10 @@ import java.time.LocalDateTime;
 )
 public class PlanPaymentEntity {
 
-	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "payId")
-	private Long payId;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "payId")
+    private Long payId;
 
     @Column(name = "mid", nullable = false, length = 50)
     private String mid;
@@ -54,4 +53,8 @@ public class PlanPaymentEntity {
     @Lob
     @Column(name = "payRaw")
     private String payRaw;           // 원문 JSON (안전 보관용)
+
+    /** ✅ 소프트 삭제용 활성 플래그 */
+    @Column(name = "payActive", nullable = false)
+    private boolean payActive = true;
 }

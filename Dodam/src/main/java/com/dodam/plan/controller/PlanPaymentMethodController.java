@@ -17,7 +17,7 @@ import java.util.Optional;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/billing-keys")
+@RequestMapping("/payment-methods")
 public class PlanPaymentMethodController {
 
     private final PlanPaymentProfileService profileSvc;
