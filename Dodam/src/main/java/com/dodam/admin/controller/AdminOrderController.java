@@ -1,4 +1,3 @@
-// src/main/java/com/dodam/admin/controller/AdminOrderController.java
 package com.dodam.admin.controller;
 
 import com.dodam.admin.dto.AdminOrderListResponseDTO;
@@ -16,15 +15,14 @@ public class AdminOrderController {
 
     private final AdminOrderService adminOrderService;
 
-    // 리스트
     @GetMapping
     public ResponseEntity<List<AdminOrderListResponseDTO>> getOrders() {
         return ResponseEntity.ok(adminOrderService.getAllOrders());
     }
 
-    // 상세
-    @GetMapping("/{orderId}")
-    public ResponseEntity<AdminOrderListResponseDTO> getOrderById(@PathVariable Long orderId) {
+    // 숫자만 상세로 들어오도록 백엔드 경로 정규식
+    @GetMapping("/{orderId:[0-9]+}")
+    public ResponseEntity<AdminOrderListResponseDTO> getOrderById(@PathVariable("orderId") Long orderId) {
         return ResponseEntity.ok(adminOrderService.findOrderById(orderId));
     }
 }
