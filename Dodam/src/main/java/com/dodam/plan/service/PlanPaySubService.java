@@ -53,11 +53,11 @@ public class PlanPaySubService {
         if (pm == null) {
             pm = new PlanMember();
             pm.setMember(member);
-            pm.setPmStat(PmStatus.PENDING);
+            pm.setPmStatus(PmStatus.PENDING);
             pm.setPmBilMode(mode);
             pm = planMemberRepo.save(pm);
         } else {
-            pm.setPmStat(PmStatus.PENDING);
+            pm.setPmStatus(PmStatus.PENDING);
             pm.setPmBilMode(mode);
             pm = planMemberRepo.save(pm);
         }
