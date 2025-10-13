@@ -56,7 +56,7 @@ public class SecurityConfig {
                 "/api/reviews/count",
                 "/api/products/**",
                 "/admin/**", 
-                "/cart",
+                "/cart/**",
                 "/rent/**"
             ))
             // 인가 정책
