@@ -9,4 +9,5 @@ public class CartDTO {
     private Long mnum;
     private Long pronum;
     private Long catenum;
+    private Integer qty;
 }

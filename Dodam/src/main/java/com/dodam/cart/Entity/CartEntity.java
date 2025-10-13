@@ -32,4 +32,8 @@ public class CartEntity {
 
     @Column(nullable = false)
     private Long catenum; // FK: 카테고리번호
+    
+    @Column(nullable = false)
+    private Integer qty; // 상품수량
+    
 }
