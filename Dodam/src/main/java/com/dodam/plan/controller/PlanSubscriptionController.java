@@ -19,11 +19,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -43,7 +43,7 @@ public class PlanSubscriptionController {
     private final PlanSubscriptionService subscriptionService;
     private final PlanPortoneClientService portoneClient;
 
-    /** 인보이스만 만들고 끝(기존 로직 유지) */
+    /** ✅ 인보이스만 만들고 끝(기존 로직 유지) */
     @PostMapping(value = "/start", consumes = MediaType.APPLICATION_JSON_VALUE)
     @Transactional
     public ResponseEntity<?> start(@RequestBody PlanSubscriptionStartReq req, HttpSession session) {
@@ -53,18 +53,15 @@ public class PlanSubscriptionController {
                     .body(Map.of("error", "LOGIN_REQUIRED"));
         }
 
-        // 0) 파라미터 정규화
         final int months = (req.getMonths() != null && req.getMonths() > 0) ? req.getMonths() : 1;
         final String planCode = (req.getPlanCode() != null) ? req.getPlanCode().trim() : null;
         if (!StringUtils.hasText(planCode)) {
             return ResponseEntity.badRequest().body(Map.of("error", "MISSING_PLAN_CODE"));
         }
 
-        // 1) 회원 조회
         MemberEntity member = memberRepo.findByMid(mid)
                 .orElseThrow(() -> new IllegalStateException("회원 정보를 찾을 수 없습니다. mid=" + mid));
 
-        // ✅ 결제수단 선택 (payId → billingKey → fallback 최신순)
         PlanPaymentEntity payment;
         if (req.getPayId() != null) {
             payment = paymentRepo.findById(req.getPayId())
@@ -83,7 +80,6 @@ public class PlanSubscriptionController {
                     .orElseThrow(() -> new IllegalStateException("결제수단이 없습니다. 먼저 카드(빌링키)를 등록하세요."));
         }
 
-        // 2) 플랜/약정 조회
         PlansEntity plan = plansRepo.findByPlanCodeIgnoreCase(planCode)
                 .orElseGet(() -> plansRepo.findByPlanCodeEqualsIgnoreCase(planCode)
                         .orElseThrow(() -> new IllegalStateException("플랜 코드가 유효하지 않습니다. planCode=" + planCode)));
@@ -91,10 +87,8 @@ public class PlanSubscriptionController {
         PlanTermsEntity terms = termsRepo.findByPtermMonth(months)
                 .orElseThrow(() -> new IllegalStateException("해당 개월 약정이 없습니다. months=" + months));
 
-        // 3) 결제 모드 결정
         final String mode = (months == 1) ? "MONTHLY" : "PREPAID_TERM";
 
-        // 4) 가격 조회
         PlanPriceEntity price = priceRepo
                 .findFirstByPlan_PlanIdAndPterm_PtermIdAndPpriceBilModeAndPpriceActiveTrue(
                         plan.getPlanId(), terms.getPtermId(), mode)
@@ -105,17 +99,16 @@ public class PlanSubscriptionController {
         final BigDecimal amount = price.getPpriceAmount();
         final String currency = StringUtils.hasText(price.getPpriceCurr()) ? price.getPpriceCurr() : "KRW";
 
-        // 5) PlanMember upsert
         PlanMember pm = planMemberRepo.findByMember_Mid(mid).orElse(null);
         if (pm == null) {
             LocalDateTime now = LocalDateTime.now();
             pm = PlanMember.builder()
                     .member(member)
-                    .payment(payment) // 최초 생성 시 연결
+                    .payment(payment)
                     .plan(plan)
                     .terms(terms)
                     .price(price)
-                    .pmStat(PmStatus.ACTIVE)
+                    .pmStatus(PmStatus.ACTIVE)
                     .pmBilMode(PmBillingMode.valueOf(mode))
                     .pmStart(now)
                     .pmTermStart(now)
@@ -125,13 +118,11 @@ public class PlanSubscriptionController {
                     .pmCancelCheck(false)
                     .build();
             pm = planMemberRepo.save(pm);
-            log.info("[subscriptions/start] PlanMember created mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
         } else {
             boolean updated = false;
             if (pm.getPayment() == null || !pm.getPayment().getPayId().equals(payment.getPayId())) {
                 pm.setPayment(payment);
                 updated = true;
-                log.info("[subscriptions/start] PlanMember payment updated mid={}, pmId={}, payId={}", mid, pm.getPmId(), payment.getPayId());
             }
             if (!pm.getPlan().getPlanId().equals(plan.getPlanId())) { pm.setPlan(plan); updated = true; }
             if (!pm.getTerms().getPtermId().equals(terms.getPtermId())) { pm.setTerms(terms); updated = true; }
@@ -139,7 +130,6 @@ public class PlanSubscriptionController {
             if (updated) planMemberRepo.save(pm);
         }
 
-        // 6) 멱등 체크
         final LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
         final LocalDateTime from = now.minusMinutes(10);
         var recentOpt = invoiceRepo.findRecentPendingSameAmount(mid, PiStatus.PENDING, amount, currency, from, now);
@@ -147,18 +137,14 @@ public class PlanSubscriptionController {
             var inv = recentOpt.get();
             log.info("[subscriptions/start] ALREADY_PENDING mid={}, invoiceId={}", mid, inv.getPiId());
 
-            Map<String, Object> body = new HashMap<>();
-            body.put("message", "ALREADY_PENDING");
-            body.put("invoiceId", inv.getPiId());
-            body.put("amount", inv.getPiAmount());
-            body.put("currency", inv.getPiCurr());
-            body.put("start", inv.getPiStart());
-            body.put("end", inv.getPiEnd());
-            body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null);
-            return ResponseEntity.ok(body);
+            return ResponseEntity.ok(Map.of(
+                    "message", "ALREADY_PENDING",
+                    "invoiceId", inv.getPiId(),
+                    "amount", inv.getPiAmount(),
+                    "currency", inv.getPiCurr()
+            ));
         }
 
-        // 7) 신규 인보이스 생성
         var inv = PlanInvoiceEntity.builder()
                 .planMember(pm)
                 .piStart(now)
@@ -169,17 +155,15 @@ public class PlanSubscriptionController {
                 .build();
         invoiceRepo.save(inv);
 
-        log.info("[subscriptions/start] PENDING_CREATED mid={}, invoiceId={}, payId={}", mid, inv.getPiId(), pm.getPayment() != null ? pm.getPayment().getPayId() : null);
+        log.info("[subscriptions/start] PENDING_CREATED mid={}, invoiceId={}, payId={}", mid, inv.getPiId(),
+                pm.getPayment() != null ? pm.getPayment().getPayId() : null);
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("message", "PENDING_CREATED");
-        body.put("invoiceId", inv.getPiId());
-        body.put("amount", inv.getPiAmount());
-        body.put("currency", inv.getPiCurr());
-        body.put("start", inv.getPiStart());
-        body.put("end", inv.getPiEnd());
-        body.put("payId", pm.getPayment() != null ? pm.getPayment().getPayId() : null);
-        return ResponseEntity.ok(body);
+        return ResponseEntity.ok(Map.of(
+                "message", "PENDING_CREATED",
+                "invoiceId", inv.getPiId(),
+                "amount", inv.getPiAmount(),
+                "currency", inv.getPiCurr()
+        ));
     }
 
     /** ✅ 인보이스를 바로 빌링키로 결제 트리거하고, 폴링으로 확정까지 처리 */
@@ -195,7 +179,6 @@ public class PlanSubscriptionController {
             var result = subscriptionService.chargeAndConfirm(mid, req);
             return ResponseEntity.ok(result);
         } catch (IllegalStateException ex) {
-            log.warn("[charge-and-confirm] {}", ex.getMessage(), ex);
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         } catch (Exception ex) {
             log.error("[charge-and-confirm] unexpected", ex);
@@ -204,28 +187,54 @@ public class PlanSubscriptionController {
         }
     }
 
-    /** ✅ 다음 결제 예약 해지 (현재 이용기간 유지) */
-    @PostMapping("/cancel-renewal")
-    public ResponseEntity<?> cancelNextRenewal(@RequestBody CancelRenewalReq req, Authentication auth) {
+    /** ✅ 기간말 해지 예약 (btn: 해지 예약) */
+    @PostMapping("/{pmId}/cancel")
+    public ResponseEntity<?> scheduleCancelAtPeriodEnd(
+            @PathVariable("pmId") Long pmId,
+            Authentication auth) {
+
         final String mid = (auth != null ? auth.getName() : null);
         if (!StringUtils.hasText(mid)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "LOGIN_REQUIRED"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "LOGIN_REQUIRED"));
         }
-        var r = subscriptionService.cancelNextRenewal(mid, req.getReason());
-        if ("NO_CHANGE".equals(r.message())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "autoRenewDisabled", r.autoRenewDisabled(),
-                    "upcomingInvoiceCanceled", r.upcomingInvoiceCanceled(),
-                    "pgScheduleCanceled", r.pgScheduleCanceled(),
-                    "message", r.message()
-            ));
+
+        try {
+            subscriptionService.scheduleCancelAtPeriodEnd(pmId, mid);
+            return ResponseEntity.ok(Map.of("result", "CANCEL_SCHEDULED"));
+        } catch (ResponseStatusException ex) {
+            return ResponseEntity.status(ex.getStatusCode())
+                    .body(Map.of("error", ex.getReason()));
+        } catch (Exception e) {
+            log.error("[ScheduleCancel] 실패 mid={}, pmId={}, msg={}", mid, pmId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "INTERNAL_SERVER_ERROR"));
         }
-        return ResponseEntity.ok(Map.of(
-                "autoRenewDisabled", r.autoRenewDisabled(),
-                "upcomingInvoiceCanceled", r.upcomingInvoiceCanceled(),
-                "pgScheduleCanceled", r.pgScheduleCanceled(),
-                "message", r.message()
-        ));
+    }
+
+    /** ✅ 기간말 해지 예약 취소 (btn: 해지 예약 취소) */
+    @PostMapping("/{pmId}/cancel/revert")
+    public ResponseEntity<?> revertCancelAtPeriodEnd(
+            @PathVariable("pmId") Long pmId,
+            Authentication auth) {
+
+        final String mid = (auth != null ? auth.getName() : null);
+        if (!StringUtils.hasText(mid)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "LOGIN_REQUIRED"));
+        }
+
+        try {
+            subscriptionService.revertCancelAtPeriodEnd(pmId, mid);
+            return ResponseEntity.ok(Map.of("result", "CANCEL_REVERTED"));
+        } catch (ResponseStatusException ex) {
+            return ResponseEntity.status(ex.getStatusCode())
+                    .body(Map.of("error", ex.getReason()));
+        } catch (Exception e) {
+            log.error("[RevertCancel] 실패 mid={}, pmId={}, msg={}", mid, pmId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "INTERNAL_SERVER_ERROR"));
+        }
     }
 
     @Data

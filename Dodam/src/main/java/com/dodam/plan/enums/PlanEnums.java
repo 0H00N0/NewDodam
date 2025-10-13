@@ -1,7 +1,7 @@
 package com.dodam.plan.enums;
 
 public final class PlanEnums{
-public enum PmStatus { ACTIVE, PAUSED, CANCELED, EXPIRED, PENDING }
+public enum PmStatus { ACTIVE, PAUSED, CANCELED, EXPIRED, PENDING, CANCEL_SCHEDULED }
 public enum PmBillingMode { MONTHLY, PREPAID_TERM }
 
 public enum PiStatus { PENDING, PAID, FAILED, CANCELED, REFUNDED, READY }

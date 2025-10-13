@@ -28,7 +28,7 @@ public class PlanSubscriptionSchedulerService {
     @Scheduled(cron = "0 */5 * * * *")
     @Transactional
     public void run() {
-        var due = pmRepo.findByPmNextBilBeforeAndPmStat(LocalDateTime.now(), PmStatus.ACTIVE);
+        var due = pmRepo.findByPmNextBilBeforeAndPmStatus(LocalDateTime.now(), PmStatus.ACTIVE);
         for (var pm : due) {
             var next = createNextInvoice(pm);
             if (next != null) {

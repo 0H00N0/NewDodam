@@ -16,75 +16,80 @@ import java.util.Optional;
 
 public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, Long> {
 
-    Optional<PlanInvoiceEntity> findByPiUid(String piUid);
+	Optional<PlanInvoiceEntity> findByPiUid(String piUid);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select i from PlanInvoiceEntity i where i.piId = :piId")
-    Optional<PlanInvoiceEntity> findForUpdate(@Param("piId") Long piId);
-    
-    Optional<PlanInvoiceEntity> findTopByPlanMember_PmIdOrderByPiIdDesc(Long pmId);
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select i from PlanInvoiceEntity i where i.piId = :piId")
+	Optional<PlanInvoiceEntity> findForUpdate(@Param("piId") Long piId);
 
+	Optional<PlanInvoiceEntity> findTopByPlanMember_PmIdOrderByPiIdDesc(Long pmId);
 
-    /** PAID 처리 + piUid 비어있으면 세팅 */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        update PlanInvoiceEntity i
-           set i.piStat = com.dodam.plan.enums.PlanEnums$PiStatus.PAID,
-               i.piPaid = coalesce(i.piPaid, :paidAt),
-               i.piUid  = case when (i.piUid is null or i.piUid = '') then :uid else i.piUid end
-         where i.piId = :piId
-    """)
-    int markPaidAndSetUidIfEmpty(@Param("piId") Long piId,
-                                 @Param("uid") String uid,
-                                 @Param("paidAt") LocalDateTime paidAt);
+	/** PAID 처리 + piUid 비어있으면 세팅 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+			    update PlanInvoiceEntity i
+			       set i.piStat = com.dodam.plan.enums.PlanEnums$PiStatus.PAID,
+			           i.piPaid = coalesce(i.piPaid, :paidAt),
+			           i.piUid  = case when (i.piUid is null or i.piUid = '') then :uid else i.piUid end
+			     where i.piId = :piId
+			""")
+	int markPaidAndSetUidIfEmpty(@Param("piId") Long piId, @Param("uid") String uid,
+			@Param("paidAt") LocalDateTime paidAt);
 
-   
-    @Query("""
-            select i from PlanInvoiceEntity i
-             where i.planMember.member.mid = :mid
-               and i.piStat = :status
-               and i.piAmount = :amount
-               and i.piCurr = :currency
-               and i.piStart between :from and :to
-            order by i.piId desc
-            """)
-    Optional<PlanInvoiceEntity> findRecentPendingSameAmount(@Param("mid") String mid,
-                                                            @Param("status") PlanEnums.PiStatus status,
-                                                            @Param("amount") BigDecimal amount,
-                                                            @Param("currency") String currency,
-                                                            @Param("from") LocalDateTime from,
-                                                            @Param("to") LocalDateTime to);
+	@Query("""
+			select i from PlanInvoiceEntity i
+			 where i.planMember.member.mid = :mid
+			   and i.piStat = :status
+			   and i.piAmount = :amount
+			   and i.piCurr = :currency
+			   and i.piStart between :from and :to
+			order by i.piId desc
+			""")
+	Optional<PlanInvoiceEntity> findRecentPendingSameAmount(@Param("mid") String mid,
+			@Param("status") PlanEnums.PiStatus status, @Param("amount") BigDecimal amount,
+			@Param("currency") String currency, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    /** 회원의 모든 인보이스 조회 */
-    List<PlanInvoiceEntity> findAllByPlanMember_Member_Mnum(Long mnum);
+	/** 회원의 모든 인보이스 조회 */
+	List<PlanInvoiceEntity> findAllByPlanMember_Member_Mnum(Long mnum);
 
-    /* ===== (추가) 보조 매칭: 금액+시간창 심플 버전 ===== */
-    @Query("""
-        select i from PlanInvoiceEntity i
-         where i.piStat = :status
-           and i.piAmount = :amount
-           and i.piStart >= :fromTime
-        order by i.piId desc
-    """)
-    Optional<PlanInvoiceEntity> findRecentPendingSameAmountSimple(@Param("status") PlanEnums.PiStatus status,
-                                                                  @Param("amount") BigDecimal amount,
-                                                                  @Param("fromTime") LocalDateTime fromTime);
+	/* ===== (추가) 보조 매칭: 금액+시간창 심플 버전 ===== */
+	@Query("""
+			    select i from PlanInvoiceEntity i
+			     where i.piStat = :status
+			       and i.piAmount = :amount
+			       and i.piStart >= :fromTime
+			    order by i.piId desc
+			""")
+	Optional<PlanInvoiceEntity> findRecentPendingSameAmountSimple(@Param("status") PlanEnums.PiStatus status,
+			@Param("amount") BigDecimal amount, @Param("fromTime") LocalDateTime fromTime);
 
-    default Optional<PlanInvoiceEntity> findRecentPendingSameAmount(BigDecimal amount, Duration within) {
-        LocalDateTime from = LocalDateTime.now().minus(within == null ? Duration.ofMinutes(10) : within);
-        return findRecentPendingSameAmountSimple(PiStatus.PENDING, amount, from);
-    }
-    
-    /*결제 취소 관련*/
-    @Query("""
-            select i
-              from PlanInvoiceEntity i
-             where i.planMember.pmId = :pmId
-               and i.piStart > :now
-               and i.piStat in (com.dodam.plan.enums.PlanEnums$PiStatus.PENDING,
-                                com.dodam.plan.enums.PlanEnums$PiStatus.READY)
-             order by i.piStart asc
-        """)
-    List<PlanInvoiceEntity> findUpcomingPendingByPmId(@Param("pmId") Long pmId,
-                                                      @Param("now") LocalDateTime now);
+	default Optional<PlanInvoiceEntity> findRecentPendingSameAmount(BigDecimal amount, Duration within) {
+		LocalDateTime from = LocalDateTime.now().minus(within == null ? Duration.ofMinutes(10) : within);
+		return findRecentPendingSameAmountSimple(PiStatus.PENDING, amount, from);
+	}
+
+	/* 결제 취소 관련 */
+	@Query("""
+			    select i
+			      from PlanInvoiceEntity i
+			     where i.planMember.pmId = :pmId
+			       and i.piStart > :now
+			       and i.piStat in (com.dodam.plan.enums.PlanEnums$PiStatus.PENDING,
+			                        com.dodam.plan.enums.PlanEnums$PiStatus.READY)
+			     order by i.piStart asc
+			""")
+	List<PlanInvoiceEntity> findUpcomingPendingByPmId(@Param("pmId") Long pmId, @Param("now") LocalDateTime now);
+
+	@Query("""
+			    select i
+			      from PlanInvoiceEntity i
+			     where i.planMember.pmId = :pmId
+			     order by i.piEnd desc
+			""")
+	List<PlanInvoiceEntity> findAllByPmIdOrderByEndDesc(@Param("pmId") Long pmId);
+
+	default Optional<PlanInvoiceEntity> findLatestByPmId(Long pmId) {
+		var list = findAllByPmIdOrderByEndDesc(pmId);
+		return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+	}
 }
