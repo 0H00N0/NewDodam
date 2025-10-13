@@ -1,29 +1,30 @@
+// src/main/java/com/dodam/admin/dto/AdminOrderListResponseDTO.java
 package com.dodam.admin.dto;
 
 import com.dodam.rent.entity.RentEntity;
+import com.dodam.rent.entity.RentEntity.ShipStatus;
 import lombok.Getter;
+
 import java.time.LocalDateTime;
 
 @Getter
 public class AdminOrderListResponseDTO {
 
-    private Long renNum; // 주문(대여) 번호
-    private String productName; // 상품명
-    private String memberName; // 주문자명 (MemberEntity에 getName()이 있다고 가정)
-    private LocalDateTime renDate; // 주문 일시
-    private Integer renApproval; // 승인 상태 (0: 대기, 1: 승인, 2: 거절 등)
-    private String renRider; // 배송 기사
-    private String trackingNumber; // 운송장 번호
+    private final Long renNum;            // 대여 PK
+    private final String productName;     // 상품명
+    private final String memberName;      // 주문자명
+    private final LocalDateTime renDate;  // 대여일
+    private final LocalDateTime retDate;  // 반납일
+    private final ShipStatus renShip;     // 배송상태(ENUM: SHIPPING/DELIVERED)
+    private final String trackingNumber;  // 운송장
 
     public AdminOrderListResponseDTO(RentEntity rent) {
         this.renNum = rent.getRenNum();
-        this.productName = rent.getProduct().getProname();
-        // ※ MemberEntity에 'name' 필드와 getName() 메서드가 있어야 합니다.
-        // 만약 필드명이 다르다면 이 부분을 수정해주세요. (예: rent.getMember().getUserId())
-        this.memberName = rent.getMember().getMname();
+        this.productName = rent.getProduct() != null ? rent.getProduct().getProname() : null;
+        this.memberName  = rent.getMember()  != null ? rent.getMember().getMname()   : null;
         this.renDate = rent.getRenDate();
-        this.renApproval = rent.getRenApproval();
-        this.renRider = rent.getRenRider();
+        this.retDate = rent.getRetDate();
+        this.renShip = rent.getRenShip();
         this.trackingNumber = rent.getTrackingNumber();
     }
 }
