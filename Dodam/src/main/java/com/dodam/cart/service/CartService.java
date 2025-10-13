@@ -6,6 +6,8 @@ import com.dodam.cart.dto.CartItemViewDTO;
 import com.dodam.cart.repository.CartRepository;
 import com.dodam.product.entity.ProductEntity;
 import com.dodam.product.repository.ProductRepository;
+import com.dodam.rent.service.RentService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ public class CartService {
 
     private final CartRepository cartRepo;
     private final ProductRepository productRepo;  // ✅ 상품명/가격 조회용
+    private final RentService rentService;
 
     public CartDTO get(Long cartnum) {
         CartEntity entity = cartRepo.findById(cartnum)
@@ -50,7 +53,7 @@ public class CartService {
                     .proname(p != null ? p.getProname() : null)
                     .price(p != null ? p.getProprice() : null)    // 표시용 현재가
                     .thumbnail(null)                               // 필요시 이미지 조인해서 채워도 됨
-                    .qty(1)                                        // 현재 스키마에 수량 없음 → 1 고정
+                    .qty(e.getQty())                              // ✅ 여기! 1 고정 → e.getQty() 로 변경
                     .build());
         }
         return result;
@@ -90,5 +93,44 @@ public class CartService {
             .pronum(entity.getPronum())
             .catenum(entity.getCatenum())
             .build();
+    }
+    
+    /** 수량 변경 */
+    public void changeQty(Long mnum, Long pronum, int qty) {
+        if (qty < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "qty >= 1");
+        var e = cartRepo.findByMnumAndPronum(mnum, pronum)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "cart item"));
+        e.setQty(qty);
+        cartRepo.save(e);
+    }
+
+    /** 삭제 */
+    public void removeItem(Long mnum, Long pronum) {
+        cartRepo.deleteByMnumAndPronum(mnum, pronum);
+    }
+
+    /** 체크아웃 → Rent 생성 (선택/전체) */
+    public List<Long> checkoutToRent(Long mnum, List<Long> pronums, boolean clearCart) {
+        var list = cartRepo.findByMnum(mnum);
+        var targets = (pronums == null || pronums.isEmpty())
+                ? list
+                : list.stream().filter(e -> pronums.contains(e.getPronum())).toList();
+
+        List<Long> rentIds = new ArrayList<>();
+        for (var item : targets) {
+            int times = Math.max(1, item.getQty());
+            for (int i = 0; i < times; i++) {
+                var rent = rentService.rentProduct(mnum, item.getPronum());
+                // RentEntity PK 이름은 실제 코드에 맞게
+                // 예: rent.getRenid()
+                rentIds.add(rent.getRenNum());
+            }
+        }
+
+        if (clearCart) {
+            if (pronums == null || pronums.isEmpty()) cartRepo.deleteByMnum(mnum);
+            else pronums.forEach(pr -> cartRepo.deleteByMnumAndPronum(mnum, pr));
+        }
+        return rentIds;
     }
 }
