@@ -66,6 +66,15 @@ public interface PlanMemberRepository extends JpaRepository<PlanMember, Long> {
     int activateByPmstatus(@Param("pmId") Long pmId,
                            @Param("stat") PmStatus stat);
 
-    /** MemberEntity.mnum(PK) 기준으로 모든 PlanMember 조회 (전체 이력) */
+    //MemberEntity.mnum(PK) 기준으로 모든 PlanMember 조회 (전체 이력)
     List<PlanMember> findAllByMember_Mnum(Long mnum);
+    
+ // 다음 결제일이 until 이전이고, 활성 상태이며(= 자동 연장 대상),
+ // 기간말 해지 예약이 아닌 구독만 조회
+ List<PlanMember> findByPmNextBilBeforeAndPmStatusAndCancelAtPeriodEndFalse(
+         LocalDateTime until, PmStatus pmStatus);
+
+ // 기간말 해지 예약(CANCEL_SCHEDULED) 이면서 종료일이 지난 구독(즉시 해지 대상)
+ List<PlanMember> findByPmStatusAndCancelAtPeriodEndTrueAndPmTermEndBefore(
+         PmStatus pmStatus, LocalDateTime now);
 }

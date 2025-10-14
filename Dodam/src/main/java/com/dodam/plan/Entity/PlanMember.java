@@ -13,16 +13,16 @@ import java.time.LocalDateTime;
   name = "PLANMEMBER",
   indexes = {
     @Index(name="idx_pm_member",  columnList="mnum"),
-    // ✅ 상태 인덱스는 실제 컬럼명(pmStatus)에 맞춘다
-    @Index(name="idx_pm_status",  columnList="pmStatus"),
-    @Index(name="idx_pm_nextbil", columnList="pmNextBil"),
+    @Index(name="idx_pm_status",  columnList="pmStat"),
+    @Index(name="idx_pm_nextBil", columnList="pmNextBil"),
     @Index(name="idx_pm_plan",    columnList="planId,ptermId")
   }
 )
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class PlanMember {
 
-  @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+  @Id 
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long pmId;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -46,50 +46,54 @@ public class PlanMember {
   private MemberEntity member;
 
   /* =========================
-   *   상태/과금 모드
+   *   상태 / 과금 모드
    * ========================= */
 
-  // ⚠️ 구 컬럼(pmStat)과 혼동을 피하기 위해 엔티티에선 제거
-  // @Enumerated(EnumType.STRING)
-  // @Column(nullable = false, length = 20)
-  // private PmStatus pmStat;
-
   @Enumerated(EnumType.STRING)
-  @Column(name = "pmStatus", length = 30, nullable = false)
+  @Column(name = "pmStat", length = 30, nullable = false)
+  @Builder.Default
   private PmStatus pmStatus = PmStatus.ACTIVE;
 
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
-  private PmBillingMode pmBilMode;  // MONTHLY / PREPAID_TERM
+  @Column(name = "pmBilMode", nullable = false, length = 20)
+  private PmBillingMode pmBilMode;
 
   /* =========================
-   *   기간 / 갱신
+   *   기간 / 갱신 관련
    * ========================= */
-  @Column(nullable=false)
+  @Column(name = "pmStart", nullable=false)
+  @Builder.Default
   private LocalDateTime pmStart = LocalDateTime.now();
 
+  @Column(name = "pmTermStart")
   private LocalDateTime pmTermStart;
+
+  @Column(name = "pmTermEnd")
   private LocalDateTime pmTermEnd;
+
+  @Column(name = "pmNextBil")
   private LocalDateTime pmNextBil;
+
+  @Column(name = "pmCycle")
   private Integer pmCycle;
 
   /* =========================
    *   해지(기간말 예약) 관련
    * ========================= */
-
-  // (기존 로직과의 호환 용도: 필요하면 유지, 아니면 제거해도 무방)
-  @Column(nullable=false)
+  @Column(name="pmCancelCheck", nullable=false)
+  @Builder.Default
   private boolean pmCancelCheck = false;
 
-  /** 해지 신청 시각 (DDL: pmCancelReqAt) */
+  /** 해지 신청 시각 */
   @Column(name = "pmCancelReqAt")
   private LocalDateTime cancelRequestedAt;
 
-  /** 기간말 해지 예약 여부 (DDL: pmCancelAtEnd NUMBER(1) NOT NULL) */
+  /** 기간말 해지 예약 여부 */
   @Column(name = "pmCancelAtEnd", nullable = false)
+  @Builder.Default
   private boolean cancelAtPeriodEnd = false;
 
-  /** 실제 해지 완료 시각 (DDL: pmCanceledAt) */
+  /** 실제 해지 완료 시각 */
   @Column(name = "pmCanceledAt")
   private LocalDateTime canceledAt;
 }

@@ -57,7 +57,8 @@ public class SecurityConfig {
                 "/api/products/**",
                 "/admin/**", 
                 "/cart/**",
-                "/rent/**"
+                "/rent/**",
+                "/test/**"
             ))
             // 인가 정책
             .authorizeHttpRequests(auth -> auth
@@ -75,6 +76,7 @@ public class SecurityConfig {
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/events/**").permitAll()
+                .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
                 .requestMatchers("/rent/**").authenticated()
 
                 // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
