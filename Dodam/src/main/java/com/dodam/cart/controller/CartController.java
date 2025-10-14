@@ -57,7 +57,7 @@ public class CartController {
     
     /** 수량 변경 */
     @PatchMapping("/items/{pronum}")
-    public void changeQty(@PathVariable Long pronum,
+    public void changeQty(@PathVariable("pronum") Long pronum,
                           @RequestBody Map<String, Integer> body,
                           HttpSession session) {
         Integer qty = body.get("qty");
@@ -67,7 +67,7 @@ public class CartController {
 
     /** 삭제 */
     @DeleteMapping("/items/{pronum}")
-    public void remove(@PathVariable Long pronum, HttpSession session) {
+    public void remove(@PathVariable("pronum") Long pronum, HttpSession session) {
         cartService.removeItem(getMnum(session), pronum);
     }
 

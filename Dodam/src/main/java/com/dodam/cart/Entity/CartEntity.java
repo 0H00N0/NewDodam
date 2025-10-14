@@ -8,10 +8,12 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.*;
 
 @Entity
-@Table(name = "cart")
+@Table(name = "cart",
+	   uniqueConstraints = @UniqueConstraint(columnNames = {"mnum", "pronum"}))
 @Getter @Setter @Builder
 @NoArgsConstructor @AllArgsConstructor
 public class CartEntity {

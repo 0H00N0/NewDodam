@@ -66,17 +66,19 @@ public class CartService {
     public CartDTO upsert(CartDTO dto) {
         CartEntity exist = cartRepo.findByMnumAndPronum(dto.getMnum(), dto.getPronum()).orElse(null);
         if (exist != null) {
-            // 이미 담겨 있으면 그대로 DTO로 반환 (수량 컬럼이 생기면 여기서 +qty 로직 작성)
+            exist.setQty(exist.getQty() + Math.max(1, dto.getQty())); // 누적
             return toDTO(exist);
         }
         CartEntity entity = CartEntity.builder()
                 .mnum(dto.getMnum())
                 .pronum(dto.getPronum())
                 .catenum(dto.getCatenum())
+                .qty(Math.max(1, dto.getQty()))
                 .build();
-        entity = cartRepo.save(entity);
+        cartRepo.save(entity);
         return toDTO(entity);
     }
+
 
     /**
      * (필요 시 유지) 단순 save — 이제는 upsert로 위임
@@ -92,10 +94,12 @@ public class CartService {
             .mnum(entity.getMnum())
             .pronum(entity.getPronum())
             .catenum(entity.getCatenum())
+            .qty(entity.getQty())
             .build();
     }
     
     /** 수량 변경 */
+    @Transactional 
     public void changeQty(Long mnum, Long pronum, int qty) {
         if (qty < 1) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "qty >= 1");
         var e = cartRepo.findByMnumAndPronum(mnum, pronum)
@@ -105,6 +109,7 @@ public class CartService {
     }
 
     /** 삭제 */
+    @Transactional
     public void removeItem(Long mnum, Long pronum) {
         cartRepo.deleteByMnumAndPronum(mnum, pronum);
     }
