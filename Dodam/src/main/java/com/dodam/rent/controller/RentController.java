@@ -44,4 +44,17 @@ public class RentController {
 
         return dto;
     }
+    
+    // ✅ [신규] 내 주문목록: GET /rent/my
+    @GetMapping("/my")
+    public java.util.List<com.dodam.rent.dto.RentResponseDTO> my(HttpSession session) {
+        String sid = (String) session.getAttribute("sid");
+        if (sid == null || sid.isBlank()) throw new RuntimeException("로그인 필요");
+
+        // 계정 존재 확인(탈퇴/비활성 방지)
+        memberRepository.findByMid(sid)
+            .orElseThrow(() -> new IllegalArgumentException("회원 없음: " + sid));
+
+        return rentService.findByMemberMid(sid);
+    }
 }

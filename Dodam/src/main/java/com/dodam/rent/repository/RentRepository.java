@@ -29,4 +29,7 @@ public interface RentRepository extends JpaRepository<RentEntity, Long> {
         where r.renNum = :renNum
     """)
     Optional<RentEntity> findByRenNumWithJoins(@Param("renNum") Long renNum);
+    
+    List<RentEntity> findByMember_MidOrderByRenNumDesc(String mid);
+    
 }
