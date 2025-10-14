@@ -56,7 +56,13 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // 상태 보정: 해지완료였다면 ACTIVE로
+        // ✅ 다음 주기 변경 예약이 있다면, 이번 활성화 시점에 실제 값으로 스왑
+        if (pm.getNextPlan() != null)  pm.setPlan(pm.getNextPlan());
+        if (pm.getNextTerms() != null) pm.setTerms(pm.getNextTerms());
+        if (pm.getNextPrice() != null) pm.setPrice(pm.getNextPrice());
+        pm.clearPendingChange(); // 위에서 만든 유틸(없으면 각각 null 처리)
+
+        // 상태 보정
         if (pm.getPmStatus() == null || pm.getPmStatus() == PmStatus.CANCELED) {
             pm.setPmStatus(PmStatus.ACTIVE);
             pm.setCancelAtPeriodEnd(false);
@@ -64,13 +70,15 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         }
         pm.setPmBilMode(months == 1 ? PmBillingMode.MONTHLY : PmBillingMode.PREPAID_TERM);
 
-        // 현재 주기가 남아있으면 연장, 아니면 지금부터 시작
+        // 현재 주기가 남아있으면 연장, 아니면 지금부터 시작(네 기존 코드 유지)
         LocalDateTime termStart = (pm.getPmTermEnd() != null && pm.getPmTermEnd().isAfter(now))
                 ? pm.getPmTermEnd()
                 : now;
 
         pm.setPmTermStart(termStart);
         pm.setPmTermEnd(termStart.plusMonths(months));
+
+        // ✅ 다음 결제일은 항상 새 주기의 끝으로 갱신
         pm.setPmNextBil(pm.getPmTermEnd());
         pm.setPmCycle(months);
         planMemberRepo.save(pm);
@@ -79,8 +87,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         invoice.setPiPaid(LocalDateTime.now());
         invoiceRepo.save(invoice);
 
-        log.info("[Subscription] invoice {} -> PAID, pmId={}, nextBill={}",
-                invoice.getPiId(), pm.getPmId(), pm.getPmNextBil());
+        log.info("[Subscription] invoice activated. pmId={}, term={}~{}, nextBil={}",
+                pm.getPmId(), pm.getPmTermStart(), pm.getPmTermEnd(), pm.getPmNextBil());
     }
 
     /* =========================
@@ -365,24 +373,19 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
 
         // 현재 주기 정보가 없는 경우: 즉시 해지
         if (pm.getPmTermEnd() == null) {
-            pm.setPmStatus(PmStatus.CANCELED);
-            pm.setCancelAtPeriodEnd(false);
-            pm.setCanceledAt(LocalDateTime.now());
-            planMemberRepo.save(pm);
+            int n = planMemberRepo.finalizeCancel(pmId, LocalDateTime.now());
+            if (n != 1) throw new IllegalStateException("FINALIZE_CANCEL_FAILED");
             return;
         }
 
         // 오늘이 주기 종료 전이면 예약, 지났으면 즉시 해지
         if (LocalDateTime.now().isBefore(pm.getPmTermEnd())) {
-            pm.setPmStatus(PmStatus.CANCEL_SCHEDULED);
-            pm.setCancelAtPeriodEnd(true);
-            pm.setCancelRequestedAt(LocalDateTime.now());
+            int n = planMemberRepo.markCancelAtPeriodEnd(pmId, true, LocalDateTime.now(), PmStatus.CANCEL_SCHEDULED);
+            if (n != 1) throw new IllegalStateException("MARK_CANCEL_AT_PERIOD_END_FAILED");
         } else {
-            pm.setPmStatus(PmStatus.CANCELED);
-            pm.setCancelAtPeriodEnd(false);
-            pm.setCanceledAt(LocalDateTime.now());
+            int n = planMemberRepo.finalizeCancel(pmId, LocalDateTime.now());
+            if (n != 1) throw new IllegalStateException("FINALIZE_CANCEL_FAILED");
         }
-        planMemberRepo.save(pm);
     }
 
     @Override
@@ -402,10 +405,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "PERIOD_ENDED");
         }
 
-        pm.setPmStatus(PmStatus.ACTIVE);
-        pm.setCancelAtPeriodEnd(false);
-        pm.setCancelRequestedAt(null);
-        planMemberRepo.save(pm);
+        int n = planMemberRepo.revertCancelAtPeriodEnd(pmId);
+        if (n != 1) throw new IllegalStateException("REVERT_CANCEL_AT_PERIOD_END_FAILED");
     }
 
     @Override
@@ -418,10 +419,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         if (pm.getPmTermEnd() == null) return;
 
         if (!LocalDateTime.now().isBefore(pm.getPmTermEnd())) {
-            pm.setPmStatus(PmStatus.CANCELED);
-            pm.setCancelAtPeriodEnd(false);
-            pm.setCanceledAt(LocalDateTime.now());
-            planMemberRepo.save(pm);
+            int n = planMemberRepo.finalizeCancel(pmId, LocalDateTime.now());
+            if (n != 1) throw new IllegalStateException("FINALIZE_CANCEL_FAILED");
         }
     }
 

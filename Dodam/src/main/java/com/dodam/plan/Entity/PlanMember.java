@@ -96,4 +96,23 @@ public class PlanMember {
   /** 실제 해지 완료 시각 */
   @Column(name = "pmCanceledAt")
   private LocalDateTime canceledAt;
+  
+  /** 다음 결제 주기에 적용할 예정 가격/플랜/기간 (optional) */
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name="nextPpriceId", foreignKey=@ForeignKey(name="fk_pm_next_price"))
+  private PlanPriceEntity nextPrice;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name="nextPlanId", foreignKey=@ForeignKey(name="fk_pm_next_plans"))
+  private PlansEntity nextPlan;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name="nextPtermId", foreignKey=@ForeignKey(name="fk_pm_next_terms"))
+  private PlanTermsEntity nextTerms;
+  
+  public void clearPendingChange() {
+	    this.nextPlan = null;
+	    this.nextTerms = null;
+	    this.nextPrice = null;
+	}
 }

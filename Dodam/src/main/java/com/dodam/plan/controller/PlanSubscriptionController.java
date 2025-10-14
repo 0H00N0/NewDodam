@@ -3,6 +3,7 @@ package com.dodam.plan.controller;
 import com.dodam.member.entity.MemberEntity;
 import com.dodam.member.repository.MemberRepository;
 import com.dodam.plan.Entity.*;
+import com.dodam.plan.dto.PlanChangeReq;
 import com.dodam.plan.dto.PlanSubscriptionStartReq;
 import com.dodam.plan.enums.PlanEnums.PiStatus;
 import com.dodam.plan.enums.PlanEnums.PmBillingMode;
@@ -211,6 +212,61 @@ public class PlanSubscriptionController {
                     .body(Map.of("error", "INTERNAL_SERVER_ERROR"));
         }
     }
+    
+    @PostMapping(value="/change", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Transactional
+    public ResponseEntity<?> changeNextCycle(@RequestBody PlanChangeReq req, Authentication auth) {
+        final String mid = (auth != null ? auth.getName() : null);
+        if (!StringUtils.hasText(mid)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error","LOGIN_REQUIRED"));
+        }
+
+        if (req.getPmId() == null || (req.getPriceId()==null && (!StringUtils.hasText(req.getPlanCode()) || req.getMonths()==null))) {
+            return ResponseEntity.badRequest().body(Map.of("error","MISSING_PARAMS"));
+        }
+
+        var pm = planMemberRepo.findById(req.getPmId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "PM_NOT_FOUND"));
+        if (!pm.getMember().getMid().equals(mid)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error","NOT_YOURS"));
+        }
+
+        // 대상 가격/플랜/기간 결정
+        PlanPriceEntity nextPrice;
+        PlansEntity     nextPlan;
+        PlanTermsEntity nextTerms;
+
+        if (req.getPriceId() != null) {
+            nextPrice = priceRepo.findById(req.getPriceId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "PRICE_NOT_FOUND"));
+            nextPlan  = nextPrice.getPlan();
+            nextTerms = nextPrice.getPterm();
+        } else {
+            nextPlan = plansRepo.findByPlanCodeIgnoreCase(req.getPlanCode())
+                    .orElseGet(() -> plansRepo.findByPlanCodeEqualsIgnoreCase(req.getPlanCode())
+                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "PLAN_NOT_FOUND")));
+            nextTerms = termsRepo.findByPtermMonth(req.getMonths())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "TERMS_NOT_FOUND"));
+
+            nextPrice = priceRepo.findFirstByPlan_PlanIdAndPterm_PtermIdAndPpriceBilModeAndPpriceActiveTrue(
+                    nextPlan.getPlanId(), nextTerms.getPtermId(),
+                    (req.getMonths()==1) ? "MONTHLY" : "PREPAID_TERM"
+            ).orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "PRICE_NOT_FOUND"));
+        }
+
+        // 다음 주기에 적용하도록 예약만 설정
+        pm.setNextPlan(nextPlan);
+        pm.setNextTerms(nextTerms);
+        pm.setNextPrice(nextPrice);
+        planMemberRepo.save(pm);
+
+        return ResponseEntity.ok(Map.of(
+                "result","CHANGE_SCHEDULED",
+                "pmId", pm.getPmId(),
+                "applyAt", pm.getPmNextBil() // 사용자에게 ‘다음 결제일에 적용’ 명확히 안내
+        ));
+    }
+
 
     /** ✅ 기간말 해지 예약 취소 (btn: 해지 예약 취소) */
     @PostMapping("/{pmId}/cancel/revert")

@@ -77,4 +77,38 @@ public interface PlanMemberRepository extends JpaRepository<PlanMember, Long> {
  // 기간말 해지 예약(CANCEL_SCHEDULED) 이면서 종료일이 지난 구독(즉시 해지 대상)
  List<PlanMember> findByPmStatusAndCancelAtPeriodEndTrueAndPmTermEndBefore(
          PmStatus pmStatus, LocalDateTime now);
+ 
+ @Modifying(clearAutomatically = true, flushAutomatically = true)
+ @Query("""
+   UPDATE PlanMember m
+      SET m.cancelAtPeriodEnd = :yn,
+          m.cancelRequestedAt = :reqAt,
+          m.pmStatus = :status
+    WHERE m.pmId = :pmId
+ """)
+ int markCancelAtPeriodEnd(@Param("pmId") Long pmId,
+                           @Param("yn") boolean yn,
+                           @Param("reqAt") java.time.LocalDateTime reqAt,
+                           @Param("status") com.dodam.plan.enums.PlanEnums.PmStatus status);
+
+ @Modifying(clearAutomatically = true, flushAutomatically = true)
+ @Query("""
+   UPDATE PlanMember m
+      SET m.cancelAtPeriodEnd = false,
+          m.cancelRequestedAt = null,
+          m.pmStatus = com.dodam.plan.enums.PlanEnums.PmStatus.ACTIVE
+    WHERE m.pmId = :pmId
+ """)
+ int revertCancelAtPeriodEnd(@Param("pmId") Long pmId);
+
+ @Modifying(clearAutomatically = true, flushAutomatically = true)
+ @Query("""
+   UPDATE PlanMember m
+      SET m.cancelAtPeriodEnd = false,
+          m.canceledAt = :canceledAt,
+          m.pmStatus = com.dodam.plan.enums.PlanEnums.PmStatus.CANCELED
+    WHERE m.pmId = :pmId
+ """)
+ int finalizeCancel(@Param("pmId") Long pmId,
+                    @Param("canceledAt") java.time.LocalDateTime canceledAt);
 }
