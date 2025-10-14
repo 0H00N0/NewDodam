@@ -21,7 +21,7 @@ public class AdminOrderController {
     }
 
     // 숫자만 상세로 들어오도록 백엔드 경로 정규식
-    @GetMapping("/{orderId:[0-9]+}")
+    @GetMapping("/orderId")
     public ResponseEntity<AdminOrderListResponseDTO> getOrderById(@PathVariable("orderId") Long orderId) {
         return ResponseEntity.ok(adminOrderService.findOrderById(orderId));
     }
