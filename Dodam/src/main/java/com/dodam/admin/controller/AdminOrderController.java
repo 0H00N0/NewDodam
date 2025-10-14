@@ -15,13 +15,14 @@ public class AdminOrderController {
 
     private final AdminOrderService adminOrderService;
 
+    // 전체 주문 목록 조회
     @GetMapping
     public ResponseEntity<List<AdminOrderListResponseDTO>> getOrders() {
         return ResponseEntity.ok(adminOrderService.getAllOrders());
     }
 
-    // 숫자만 상세로 들어오도록 백엔드 경로 정규식
-    @GetMapping("/orderId")
+    // ✅ 수정된 코드: 특정 주문 상세 조회
+    @GetMapping("/{orderId}")
     public ResponseEntity<AdminOrderListResponseDTO> getOrderById(@PathVariable("orderId") Long orderId) {
         return ResponseEntity.ok(adminOrderService.findOrderById(orderId));
     }
