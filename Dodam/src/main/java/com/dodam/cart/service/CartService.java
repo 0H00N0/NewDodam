@@ -64,21 +64,23 @@ public class CartService {
      */
     @Transactional
     public CartDTO upsert(CartDTO dto) {
+        // ✅ qty 기본값 보정
+        int addQty = (dto.getQty() == null || dto.getQty() < 1) ? 1 : dto.getQty();
+
         CartEntity exist = cartRepo.findByMnumAndPronum(dto.getMnum(), dto.getPronum()).orElse(null);
         if (exist != null) {
-            exist.setQty(exist.getQty() + Math.max(1, dto.getQty())); // 누적
+            exist.setQty(exist.getQty() + addQty);
             return toDTO(exist);
         }
         CartEntity entity = CartEntity.builder()
                 .mnum(dto.getMnum())
                 .pronum(dto.getPronum())
                 .catenum(dto.getCatenum())
-                .qty(Math.max(1, dto.getQty()))
+                .qty(addQty) // ✅ 항상 1 이상
                 .build();
         cartRepo.save(entity);
         return toDTO(entity);
     }
-
 
     /**
      * (필요 시 유지) 단순 save — 이제는 upsert로 위임

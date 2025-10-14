@@ -45,6 +45,7 @@ public class CartController {
     @PostMapping("/items")
     public CartDTO addItem(@RequestBody CartDTO dto, HttpSession session) {
         dto.setMnum(getMnum(session));
+        if (dto.getQty() == null || dto.getQty() < 1) dto.setQty(1); // ✅
         return cartService.upsert(dto);
     }
 
@@ -52,6 +53,7 @@ public class CartController {
     @PostMapping
     public CartDTO save(@RequestBody CartDTO dto, HttpSession session) {
         dto.setMnum(getMnum(session));
+        if (dto.getQty() == null || dto.getQty() < 1) dto.setQty(1); // ✅
         return cartService.upsert(dto);
     }
     
