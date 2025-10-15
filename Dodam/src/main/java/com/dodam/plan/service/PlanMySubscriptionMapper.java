@@ -8,34 +8,36 @@ import com.dodam.plan.Entity.PlansEntity;
 import com.dodam.plan.dto.PlanMySubscriptionDTO;
 import com.dodam.plan.enums.PlanEnums;
 
+import java.time.LocalDateTime;
+
 public final class PlanMySubscriptionMapper {
 
     private PlanMySubscriptionMapper() {}
 
     public static PlanMySubscriptionDTO toDto(PlanMember pm) {
         // 현재 값
-        PlansEntity      plan  = pm.getPlan();
-        PlanTermsEntity  terms = pm.getTerms();
-        PlanPriceEntity  price = pm.getPrice();
+        PlansEntity     plan  = pm.getPlan();
+        PlanTermsEntity terms = pm.getTerms();
+        PlanPriceEntity price = pm.getPrice();
 
         // 예약(다음 주기) 값
-        PlansEntity      nPlan  = pm.getNextPlan();
-        PlanTermsEntity  nTerms = pm.getNextTerms();
-        PlanPriceEntity  nPrice = pm.getNextPrice();
+        PlansEntity     nPlan  = pm.getNextPlan();
+        PlanTermsEntity nTerms = pm.getNextTerms();
+        PlanPriceEntity nPrice = pm.getNextPrice();
 
         // ---- 현재 구독 표시용 ----
-        String  planCode = (plan != null) ? plan.getPlanCode() : null;
-        String  planName = (plan != null && plan.getPlanName() != null)
+        String planCode = (plan != null) ? plan.getPlanCode() : null;
+        String planName = (plan != null && plan.getPlanName() != null)
                 ? plan.getPlanName().getPlanName()
                 : null;
-        Integer months   = (terms != null && terms.getPtermMonth() != null)
+        Integer months = (terms != null && terms.getPtermMonth() != null)
                 ? terms.getPtermMonth()
                 : pm.getPmCycle();
 
-        String   curr   = (price != null) ? nz(price.getPpriceCurr(), "KRW") : "KRW";
-        var      amount = (price != null) ? price.getPpriceAmount() : null;
+        String curr = (price != null) ? nz(price.getPpriceCurr(), "KRW") : "KRW";
+        var amount  = (price != null) ? price.getPpriceAmount() : null;
 
-        // ---- 변경 예약 여부 (next*Id 같은 필드는 없음: 객체 참조만 사용) ----
+        // ---- 변경 예약 여부 ----
         boolean scheduled = (nPlan != null) || (nTerms != null) || (nPrice != null);
 
         // ---- 다음 갱신 예정(변경 예약이 없다면 현재값 재사용) ----
@@ -68,13 +70,22 @@ public final class PlanMySubscriptionMapper {
 
         nCurr = (nPrice != null) ? nz(nPrice.getPpriceCurr(), "KRW") : curr;
 
+        // ---- 다음 이용기간 계산 ----
+        LocalDateTime nextTermStart = pm.getPmNextBil(); // 보통 다음 주기 시작일
+        LocalDateTime nextTermEnd   = null;
+        if (nextTermStart != null && nMonths != null) {
+            nextTermEnd = nextTermStart.plusMonths(nMonths);
+        }
+
         return new PlanMySubscriptionDTO(
                 pm.getPmId(),
                 pm.getPmStatus() != null ? pm.getPmStatus().name() : PlanEnums.PmStatus.PENDING.name(),
                 planCode, planName, months, amount, curr,
                 pm.getPmTermStart(),
                 pm.getPmTermEnd(),
-                pm.getPmNextBil(),
+                pm.getPmNextBil(),     // nextBillingAt (하위 호환)
+                nextTermStart,         // ✅ 추가
+                nextTermEnd,           // ✅ 추가
                 scheduled,
                 nPlanCode, nPlanName, nMonths, nAmount, nCurr
         );
