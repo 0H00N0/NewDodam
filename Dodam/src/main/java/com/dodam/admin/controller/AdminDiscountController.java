@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/admin/discounts")
 @RequiredArgsConstructor
-@ConditionalOnProperty(name="feature.discount.enabled", havingValue="true")
+// @ConditionalOnProperty(name="feature.discount.enabled", havingValue="true")
 
 public class AdminDiscountController {
 
