@@ -2,17 +2,30 @@ package com.dodam.plan.service;
 
 import com.dodam.member.entity.MemberEntity;
 import com.dodam.member.repository.MemberRepository;
-import com.dodam.plan.Entity.*;
+import com.dodam.plan.Entity.PlanInvoiceEntity;
+import com.dodam.plan.Entity.PlanMember;
+import com.dodam.plan.Entity.PlanPaymentEntity;
+import com.dodam.plan.Entity.PlanPriceEntity;
+import com.dodam.plan.Entity.PlanTermsEntity;
+import com.dodam.plan.Entity.PlansEntity;
 import com.dodam.plan.dto.PlanSubscriptionStartReq;
 import com.dodam.plan.enums.PlanEnums.PiStatus;
 import com.dodam.plan.enums.PlanEnums.PmBillingMode;
 import com.dodam.plan.enums.PlanEnums.PmStatus;
-import com.dodam.plan.repository.*;
+import com.dodam.plan.repository.PlanInvoiceRepository;
+import com.dodam.plan.repository.PlanMemberRepository;
+import com.dodam.plan.repository.PlanPaymentRepository;
+import com.dodam.plan.repository.PlanPriceRepository;
+import com.dodam.plan.repository.PlanTermsRepository;
+import com.dodam.plan.repository.PlansRepository;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +33,14 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+
+import com.dodam.plan.service.PlanSubscriptionService.CancelNextResult;
 
 @Slf4j
 @Service
@@ -38,6 +54,9 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
     private final PlanPriceRepository priceRepo;
     private final PlanPaymentRepository paymentRepo;
     private final MemberRepository memberRepo;
+
+    // ✅ 할인 리포지토리
+    private final com.dodam.discount.repository.DiscountRepository discountRepo;
 
     private final PlanPortoneClientService portoneClient;
 
@@ -56,13 +75,11 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // ✅ 다음 주기 변경 예약이 있다면, 이번 활성화 시점에 실제 값으로 스왑
         if (pm.getNextPlan() != null)  pm.setPlan(pm.getNextPlan());
         if (pm.getNextTerms() != null) pm.setTerms(pm.getNextTerms());
         if (pm.getNextPrice() != null) pm.setPrice(pm.getNextPrice());
-        pm.clearPendingChange(); // 위에서 만든 유틸(없으면 각각 null 처리)
+        pm.clearPendingChange();
 
-        // 상태 보정
         if (pm.getPmStatus() == null || pm.getPmStatus() == PmStatus.CANCELED) {
             pm.setPmStatus(PmStatus.ACTIVE);
             pm.setCancelAtPeriodEnd(false);
@@ -70,15 +87,12 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         }
         pm.setPmBilMode(months == 1 ? PmBillingMode.MONTHLY : PmBillingMode.PREPAID_TERM);
 
-        // 현재 주기가 남아있으면 연장, 아니면 지금부터 시작(네 기존 코드 유지)
         LocalDateTime termStart = (pm.getPmTermEnd() != null && pm.getPmTermEnd().isAfter(now))
                 ? pm.getPmTermEnd()
                 : now;
 
         pm.setPmTermStart(termStart);
         pm.setPmTermEnd(termStart.plusMonths(months));
-
-        // ✅ 다음 결제일은 항상 새 주기의 끝으로 갱신
         pm.setPmNextBil(pm.getPmTermEnd());
         pm.setPmCycle(months);
         planMemberRepo.save(pm);
@@ -97,8 +111,6 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
     @Override
     @Transactional
     public Map<String, Object> chargeByBillingKeyAndConfirm(Long invoiceId, String mid, int termMonths) {
-        if (termMonths <= 0) termMonths = 1;
-
         PlanInvoiceEntity invoice = invoiceRepo.findById(invoiceId)
                 .orElseThrow(() -> new IllegalStateException("인보이스가 존재하지 않습니다. invoiceId=" + invoiceId));
 
@@ -112,7 +124,9 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         PlanMember pm = invoice.getPlanMember();
         if (pm == null) throw new IllegalStateException("인보이스에 연결된 PlanMember가 없습니다.");
 
-        // 🔒 기간말 해지 예약이고 이미 주기가 끝났으면 결제 차단
+        // 프론트가 months를 안 보냈을 수 있으므로 추정
+        int monthsResolved = resolveMonths(termMonths, invoice, pm);
+
         if (Boolean.TRUE.equals(pm.isCancelAtPeriodEnd())
                 && pm.getPmTermEnd() != null
                 && !LocalDateTime.now().isBefore(pm.getPmTermEnd())) {
@@ -124,6 +138,77 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             throw new IllegalStateException("결제수단이 없습니다. 먼저 빌링키를 등록하세요.");
         }
 
+        // ============================================================
+        // ✅ 인보이스 금액을 monthsResolved 기준으로 '할인 반영'하여 보정
+        //    (disValue = 할인율 %, ptermId 기준 max, 없으면 months 기준 보조)
+        // ============================================================
+        try {
+        	PlansEntity plan = pm.getPlan();
+        	if (plan == null && pm.getPlan() != null) {
+        	    plan = plansRepo.findById(pm.getPlan().getPlanId()).orElse(null);
+        	}
+
+        	// terms 구하기 (개월 수에 맞는 Terms 우선)
+        	PlanTermsEntity terms = termsRepo.findByPtermMonth(monthsResolved)
+        	        .orElse(pm.getTerms());
+
+        	// 🔑 할인율: disLevel=2, ptermId 우선 → months 보조
+        	int discountRate = (terms != null)
+        	        ? discountRepo.findRateByPterm(terms.getPtermId())
+        	            .or(() -> discountRepo.findRateByMonths(terms.getPtermMonth()))
+        	            .orElse(0)
+        	        : 0;
+
+        	// 1개월 기준가
+        	BigDecimal oneMonth = (plan != null)
+        	        ? priceRepo.findActiveByPlanIdAndMonths(plan.getPlanId(), 1)
+        	                   .map(PlanPriceEntity::getPpriceAmount)
+        	                   .orElse(null)
+        	        : null;
+
+        	// 기대 금액 계산(할인 적용)
+        	BigDecimal expected;
+        	if (monthsResolved == 1) {
+        	    expected = (plan != null)
+        	            ? priceRepo
+        	                .findFirstByPlan_PlanIdAndPterm_PtermMonthAndPpriceBilModeIgnoreCaseAndPpriceActiveTrue(
+        	                        plan.getPlanId(), 1, "MONTHLY")
+        	                .map(PlanPriceEntity::getPpriceAmount)
+        	                .orElse(invoice.getPiAmount())
+        	            : invoice.getPiAmount();
+        	} else if (oneMonth != null) {
+        	    BigDecimal gross = oneMonth.multiply(BigDecimal.valueOf(monthsResolved));
+        	    expected = gross.multiply(BigDecimal.valueOf(100 - discountRate))
+        	                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+        	} else {
+        	    expected = invoice.getPiAmount();
+        	}
+
+        	// 인보이스 금액/화폐/기간 보정
+        	if (expected != null && invoice.getPiAmount() != null
+        	        ? expected.compareTo(invoice.getPiAmount()) != 0
+        	        : expected != invoice.getPiAmount()) {
+        	    invoice.setPiAmount(expected);
+        	}
+        	if (!StringUtils.hasText(invoice.getPiCurr())) {
+        	    String curr = Optional.ofNullable(pm.getPrice())
+        	            .map(PlanPriceEntity::getPpriceCurr)
+        	            .filter(StringUtils::hasText)
+        	            .orElse("KRW");
+        	    invoice.setPiCurr(curr);
+        	}
+        	if (invoice.getPiStart() != null && invoice.getPiEnd() == null) {
+        	    invoice.setPiEnd(invoice.getPiStart().plusMonths(monthsResolved));
+        	}
+        	invoiceRepo.save(invoice);
+
+        	log.info("[InvoiceGuard] invoice {} corrected: months={}, amount={}, discountRate={}%",
+        	        invoice.getPiId(), monthsResolved, invoice.getPiAmount(), discountRate);
+        } catch (Exception e) {
+            log.warn("[InvoiceGuard] failed to correct invoice amount (continue). cause={}", e.toString());
+        }
+
+        // 보정된 인보이스 금액으로 결제 진행
         String billingKey = payment.getPayKey();
         BigDecimal amount = invoice.getPiAmount();
         String currency = StringUtils.hasText(invoice.getPiCurr()) ? invoice.getPiCurr() : "KRW";
@@ -165,7 +250,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             }
             invoiceRepo.save(invoice);
 
-            activateInvoice(invoice, termMonths);
+            // ✅ 반드시 monthsResolved로 반영
+            activateInvoice(invoice, monthsResolved);
 
             try {
                 updatePaymentCardMetaIfPresent(payment, result);
@@ -191,6 +277,19 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         }
 
         return resp;
+    }
+
+    private int resolveMonths(int termMonthsFromClient, PlanInvoiceEntity invoice, PlanMember pm) {
+        if (termMonthsFromClient > 0) return termMonthsFromClient;
+
+        if (invoice != null && invoice.getPiStart() != null && invoice.getPiEnd() != null) {
+            long m = ChronoUnit.MONTHS.between(invoice.getPiStart(), invoice.getPiEnd());
+            if (m > 0) return (int) m;
+        }
+
+        if (pm != null && pm.getPmCycle() != null && pm.getPmCycle() > 0) return pm.getPmCycle();
+
+        return 1;
     }
 
     private JsonNode pollUntilPaid(String orderId, Duration timeout) {
@@ -260,7 +359,7 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         MemberEntity member = memberRepo.findByMid(mid)
                 .orElseThrow(() -> new IllegalStateException("회원 정보를 찾을 수 없습니다. mid=" + mid));
 
-        // ✅ 사용자가 고른 결제수단을 정확히 집는다
+        // 사용자가 고른 결제수단
         PlanPaymentEntity payment;
         if (req.getPayId() != null) {
             payment = paymentRepo.findById(req.getPayId())
@@ -288,9 +387,29 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
                 .or(() -> priceRepo.findBestPrice(plan.getPlanId(), terms.getPtermId(), mode))
                 .orElseThrow(() -> new IllegalStateException("가격 정보가 없습니다. plan=" + planCode + ", months=" + months));
 
-        final BigDecimal amount = price.getPpriceAmount();
+        // 할인율: ptermId 기준 → 없으면 months 보조
+        int discountRate = discountRepo.findRateByPterm(terms.getPtermId())
+                .or(() -> discountRepo.findRateByMonths(months))
+                .orElse(0);
+        log.info("[DiscountCheck] ptermId={}, months={}, rate={}%", terms.getPtermId(), months, discountRate);
+
+        // 1개월 기준가
+        BigDecimal oneMonth = priceRepo.findActiveByPlanIdAndMonths(plan.getPlanId(), 1)
+                .map(PlanPriceEntity::getPpriceAmount)
+                .orElse(price.getPpriceAmount());
+
+        // 할인 금액 계산
+        final BigDecimal amount =
+                (months == 1)
+                        ? price.getPpriceAmount()
+                        : oneMonth.multiply(BigDecimal.valueOf(months))
+                                  .multiply(BigDecimal.valueOf(100 - discountRate))
+                                  .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+
         final String currency = StringUtils.hasText(price.getPpriceCurr()) ? price.getPpriceCurr() : "KRW";
 
+
+        // PlanMember 생성/갱신
         PlanMember pm = planMemberRepo.findByMember_Mid(mid).orElse(null);
         LocalDateTime now = LocalDateTime.now();
 
@@ -315,18 +434,16 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             log.info("[subscriptions/charge-and-confirm] PlanMember created mid={}, pmId={}", mid, pm.getPmId());
 
         } else {
-            // 🔒 만약 기간말 해지 예약이고 주기가 끝났으면 재구독 필요
             if (Boolean.TRUE.equals(pm.isCancelAtPeriodEnd())
                     && pm.getPmTermEnd() != null
                     && !now.isBefore(pm.getPmTermEnd())) {
                 throw new IllegalStateException("해지 예약된 구독입니다. 주기 종료 이후에는 재구독이 필요합니다.");
             }
-            // 기존 멤버라도 이번 결제수단 업데이트
             pm.setPayment(payment);
             planMemberRepo.save(pm);
         }
 
-        // 최근 PENDING 재사용(중복 생성 방지)
+        // 최근 PENDING 재사용
         LocalDateTime nowTrunc = now.truncatedTo(ChronoUnit.MINUTES);
         LocalDateTime from = nowTrunc.minusMinutes(10);
         var recentOpt = invoiceRepo.findRecentPendingSameAmount(
@@ -342,12 +459,13 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
                     .planMember(pm)
                     .piStart(now)
                     .piEnd(now.plusMonths(months))
-                    .piAmount(amount)
+                    .piAmount(amount)     // ✅ 할인 반영 금액
                     .piCurr(currency)
                     .piStat(PiStatus.PENDING)
                     .build();
             invoiceRepo.save(invoice);
-            log.info("[subscriptions/charge-and-confirm] PENDING_CREATED mid={}, invoiceId={}", mid, invoice.getPiId());
+            log.info("[subscriptions/charge-and-confirm] PENDING_CREATED mid={}, invoiceId={}, discountRate={}% (ptermId={})",
+                    mid, invoice.getPiId(), discountRate, terms.getPtermId());
         }
 
         return chargeByBillingKeyAndConfirm(invoice.getPiId(), mid, months);
@@ -359,26 +477,66 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
 
     @Override
     @Transactional
+    public CancelNextResult cancelNextRenewal(String mid, String reason) {
+        if (!StringUtils.hasText(mid)) {
+            throw new IllegalStateException("LOGIN_REQUIRED");
+        }
+        final LocalDateTime now = LocalDateTime.now();
+
+        PlanMember active = planMemberRepo.findActiveByMid(mid, now)
+                .orElseThrow(() -> new IllegalStateException("ACTIVE_SUBSCRIPTION_NOT_FOUND"));
+
+        String billingKey = (active.getPayment() != null ? active.getPayment().getPayKey() : null);
+        if (!StringUtils.hasText(billingKey)) {
+            billingKey = paymentRepo.findTopByMidOrderByPayIdDesc(mid)
+                    .map(PlanPaymentEntity::getPayKey)
+                    .orElse(null);
+        }
+        if (!StringUtils.hasText(billingKey)) {
+            throw new IllegalStateException("BILLING_KEY_NOT_FOUND");
+        }
+
+        boolean autoRenewDisabled = false;
+        active.setPmCancelCheck(true);
+        planMemberRepo.save(active);
+
+        List<PlanInvoiceEntity> upcoming = invoiceRepo.findUpcomingPendingByPmId(active.getPmId(), now);
+        boolean upcomingCanceled = false;
+        for (PlanInvoiceEntity inv : upcoming) {
+            inv.setPiStat(PiStatus.CANCELED);
+            invoiceRepo.save(inv);
+            upcomingCanceled = true;
+        }
+
+        var pg = portoneClient.cancelPaymentSchedules(billingKey, null);
+        boolean pgScheduleCanceled = pg.revokedScheduleIds() != null && !pg.revokedScheduleIds().isEmpty();
+
+        log.info("[CancelNext] mid={}, billingKey={}, upcomingCanceled={}, pgRevoked={}",
+                mid, billingKey, upcomingCanceled, pg.revokedScheduleIds());
+
+        String msg = (!upcomingCanceled && !pgScheduleCanceled) ? "NO_CHANGE" : "OK";
+
+        return new CancelNextResult(autoRenewDisabled, upcomingCanceled, pgScheduleCanceled, msg);
+    }
+
+    @Override
+    @Transactional
     public void scheduleCancelAtPeriodEnd(Long pmId, String mid) {
         PlanMember pm = planMemberRepo.findById(pmId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "PM_NOT_FOUND"));
 
-        // 소유자 검증
         if (pm.getMember() == null || pm.getMember().getMid() == null || !pm.getMember().getMid().equals(mid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
         }
 
-        // 이미 완료면 멱등 처리
         if (pm.getPmStatus() == PmStatus.CANCELED) return;
 
-        // 현재 주기 정보가 없는 경우: 즉시 해지
         if (pm.getPmTermEnd() == null) {
             int n = planMemberRepo.finalizeCancel(pmId, LocalDateTime.now());
             if (n != 1) throw new IllegalStateException("FINALIZE_CANCEL_FAILED");
             return;
         }
 
-        // 오늘이 주기 종료 전이면 예약, 지났으면 즉시 해지
         if (LocalDateTime.now().isBefore(pm.getPmTermEnd())) {
             int n = planMemberRepo.markCancelAtPeriodEnd(pmId, true, LocalDateTime.now(), PmStatus.CANCEL_SCHEDULED);
             if (n != 1) throw new IllegalStateException("MARK_CANCEL_AT_PERIOD_END_FAILED");
@@ -394,13 +552,11 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         PlanMember pm = planMemberRepo.findById(pmId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "PM_NOT_FOUND"));
 
-        // 소유자 검증
         if (pm.getMember() == null || pm.getMember().getMid() == null || !pm.getMember().getMid().equals(mid)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
         }
 
-        // 해지 예약 상태에서만, 아직 기간이 남아있을 때만 복구
-        if (pm.getPmStatus() != PmStatus.CANCEL_SCHEDULED) return; // 멱등
+        if (pm.getPmStatus() != PmStatus.CANCEL_SCHEDULED) return;
         if (pm.getPmTermEnd() != null && !LocalDateTime.now().isBefore(pm.getPmTermEnd())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "PERIOD_ENDED");
         }
@@ -422,59 +578,6 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
             int n = planMemberRepo.finalizeCancel(pmId, LocalDateTime.now());
             if (n != 1) throw new IllegalStateException("FINALIZE_CANCEL_FAILED");
         }
-    }
-
-    /* =========================
-     *  (기존) 다음 결제 예약 해지
-     * ========================= */
-
-    @Override
-    @Transactional
-    public CancelNextResult cancelNextRenewal(String mid, String reason) {
-        if (!StringUtils.hasText(mid)) {
-            throw new IllegalStateException("LOGIN_REQUIRED");
-        }
-        final LocalDateTime now = LocalDateTime.now();
-
-        // 활성 구독
-        PlanMember active = planMemberRepo.findActiveByMid(mid, now)
-                .orElseThrow(() -> new IllegalStateException("ACTIVE_SUBSCRIPTION_NOT_FOUND"));
-
-        // billingKey 확보
-        String billingKey = (active.getPayment() != null ? active.getPayment().getPayKey() : null);
-        if (!StringUtils.hasText(billingKey)) {
-            billingKey = paymentRepo.findTopByMidOrderByPayIdDesc(mid)
-                    .map(PlanPaymentEntity::getPayKey)
-                    .orElse(null);
-        }
-        if (!StringUtils.hasText(billingKey)) {
-            throw new IllegalStateException("BILLING_KEY_NOT_FOUND");
-        }
-
-        // 프로젝트에는 autoRenew 플래그가 없으므로, 예약 취소 의사만 표기
-        boolean autoRenewDisabled = false;
-        active.setPmCancelCheck(true);
-        planMemberRepo.save(active);
-
-        // 다가오는 PENDING 인보이스 취소
-        List<PlanInvoiceEntity> upcoming = invoiceRepo.findUpcomingPendingByPmId(active.getPmId(), now);
-        boolean upcomingCanceled = false;
-        for (PlanInvoiceEntity inv : upcoming) {
-            inv.setPiStat(PiStatus.CANCELED);
-            invoiceRepo.save(inv);
-            upcomingCanceled = true;
-        }
-
-        // 포트원 예약 취소
-        var pg = portoneClient.cancelPaymentSchedules(billingKey, null);
-        boolean pgScheduleCanceled = pg.revokedScheduleIds() != null && !pg.revokedScheduleIds().isEmpty();
-
-        log.info("[CancelNext] mid={}, billingKey={}, upcomingCanceled={}, pgRevoked={}",
-                mid, billingKey, upcomingCanceled, pg.revokedScheduleIds());
-
-        String msg = (!upcomingCanceled && !pgScheduleCanceled) ? "NO_CHANGE" : "OK";
-
-        return new CancelNextResult(autoRenewDisabled, upcomingCanceled, pgScheduleCanceled, msg);
     }
 
     /* =========================

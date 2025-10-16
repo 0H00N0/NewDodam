@@ -3,6 +3,7 @@ package com.dodam.plan.repository;
 import com.dodam.plan.Entity.PlanPriceEntity;
 import com.dodam.plan.Entity.PlansEntity;
 
+
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +14,11 @@ public interface PlanPriceRepository extends JpaRepository<PlanPriceEntity, Long
 
     /* ───────── 기본 목록 조회 ───────── */
     List<PlanPriceEntity> findByPlan_PlanIdAndPpriceActiveTrue(Long planId);
+    
+    @Query("select p from PlanPriceEntity p " +
+            "where p.plan.planId = :planId and p.pterm.ptermMonth = :months and p.ppriceActive = true")
+     Optional<PlanPriceEntity> findActiveByPlanIdAndMonths(@Param("planId") Long planId,
+                                                           @Param("months") Integer months);
 
     @EntityGraph(attributePaths = {"pterm"})
     List<PlanPriceEntity> findByPlan_PlanIdAndPpriceActiveTrueOrderByPterm_PtermMonth(Long planId);
