@@ -69,3 +69,5 @@ public class ProductInquiryEntity {
   @PreUpdate
   void onUpdate(){ this.updatedAt = LocalDateTime.now(); }
 }
+
+
