@@ -58,7 +58,8 @@ public class SecurityConfig {
                 "/admin/**", 
                 "/cart/**",
                 "/rent/**",
-                "/test/**"
+                "/test/**",
+                "/product-inquiries/**"
             ))
             // 인가 정책
             .authorizeHttpRequests(auth -> auth
@@ -78,7 +79,8 @@ public class SecurityConfig {
                 .requestMatchers("/events/**").permitAll()
                 .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
                 .requestMatchers("/rent/**").authenticated()
-
+                // ✅ 추가(권장): 상품 문의는 로그인 필요
+                .requestMatchers("/product-inquiries/**").authenticated()
                 // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
                 .requestMatchers("/board/**").authenticated()
 
