@@ -42,6 +42,7 @@ public class ProductInquiryEntity {
   @Column(nullable = false)
   private String content;
 
+  @Builder.Default
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 20)
   private Status status = Status.OPEN;
@@ -52,10 +53,18 @@ public class ProductInquiryEntity {
 
   private LocalDateTime answeredAt;
 
+  @Builder.Default
   @Column(nullable = false, updatable = false)
   private LocalDateTime createdAt = LocalDateTime.now();
 
   private LocalDateTime updatedAt;
+
+  @PrePersist
+  void onInsert() {
+    if (createdAt == null) createdAt = LocalDateTime.now();
+    if (updatedAt == null) updatedAt = createdAt;
+    if (status == null) status = Status.OPEN;
+  }
 
   @PreUpdate
   void onUpdate(){ this.updatedAt = LocalDateTime.now(); }
