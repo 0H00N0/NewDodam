@@ -3,6 +3,8 @@ package com.dodam.member.dto;
 import java.time.LocalDate;
 import java.util.List;
 import com.fasterxml.jackson.annotation.JsonFormat;
+
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.PastOrPresent;
 
 import com.dodam.member.entity.MemberEntity;
@@ -22,6 +24,11 @@ public class MemberDTO {
     @PastOrPresent(message = "생년월일은 미래일 수 없습니다.")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate mbirth;
+    
+    @AssertTrue(message = "생년월일은 1900-01-01 이후여야 합니다.")
+    public boolean isMbirthNotTooEarly() {
+        return mbirth == null || !mbirth.isBefore(LocalDate.of(1900, 1, 1));
+    }
     
     private String mnic;
 
@@ -76,5 +83,6 @@ public class MemberDTO {
         }
     }
     
+    @jakarta.validation.Valid
     private List<ChildDTO> children;
 }

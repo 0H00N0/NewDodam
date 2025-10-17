@@ -75,7 +75,7 @@ public class MemberController {
     
     //회원정보 수정
     @PutMapping("/updateProfile")
-    public ResponseEntity<?> updateProfile(@RequestBody MemberDTO dto, HttpSession session) {
+    public ResponseEntity<?> updateProfile(@Valid @RequestBody MemberDTO dto, HttpSession session) {
         String sid = (String) session.getAttribute("sid");
         if (sid == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("로그인이 필요합니다.");
