@@ -27,4 +27,14 @@ public class AdminOrderService {
                 .orElseThrow(() -> new EntityNotFoundException("해당 ID의 주문을 찾을 수 없습니다: " + orderId));
         return new AdminOrderListResponseDTO(rent);
     }
+    @Transactional
+    public void updateTrackingNumber(Long renNum, String trackingNumber) {
+        RentEntity rent = rentRepository.findById(renNum)
+            .orElseThrow(() -> new EntityNotFoundException("주문을 찾을 수 없습니다: " + renNum));
+
+        rent.setTrackingNumber(trackingNumber); // null이면 DB에서 비움
+        // 원하면 상태 자동 전이:
+        // if (trackingNumber != null) rent.setRenShip(ShipStatus.SHIPPING);
+    }
+
 }
