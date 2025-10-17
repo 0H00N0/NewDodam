@@ -33,7 +33,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -55,8 +54,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
     private final PlanPaymentRepository paymentRepo;
     private final MemberRepository memberRepo;
 
-    // ✅ 할인 리포지토리
-    private final com.dodam.discount.repository.DiscountRepository discountRepo;
+    // ✅ 가격/할인 계산 단일 진입점
+    private final PlanPriceService pricingService;
 
     private final PlanPortoneClientService portoneClient;
 
@@ -139,71 +138,32 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
         }
 
         // ============================================================
-        // ✅ 인보이스 금액을 monthsResolved 기준으로 '할인 반영'하여 보정
-        //    (disValue = 할인율 %, ptermId 기준 max, 없으면 months 기준 보조)
+        // ✅ 인보이스 금액을 PricingService 기준으로 '할인 반영'하여 보정
         // ============================================================
         try {
-        	PlansEntity plan = pm.getPlan();
-        	if (plan == null && pm.getPlan() != null) {
-        	    plan = plansRepo.findById(pm.getPlan().getPlanId()).orElse(null);
-        	}
+            PlansEntity plan = pm.getPlan();
+            if (plan == null) throw new IllegalStateException("Plan 정보가 없습니다. pmId=" + pm.getPmId());
 
-        	// terms 구하기 (개월 수에 맞는 Terms 우선)
-        	PlanTermsEntity terms = termsRepo.findByPtermMonth(monthsResolved)
-        	        .orElse(pm.getTerms());
+            PlanPriceService.Quote q = pricingService.quoteByPlanAndMonths(plan.getPlanId(), monthsResolved);
+            BigDecimal expected = BigDecimal.valueOf(q.amountKRW());
 
-        	// 🔑 할인율: disLevel=2, ptermId 우선 → months 보조
-        	int discountRate = (terms != null)
-        	        ? discountRepo.findRateByPterm(terms.getPtermId())
-        	            .or(() -> discountRepo.findRateByMonths(terms.getPtermMonth()))
-        	            .orElse(0)
-        	        : 0;
+            if (invoice.getPiAmount() == null || expected.compareTo(invoice.getPiAmount()) != 0) {
+                invoice.setPiAmount(expected);
+            }
+            if (!StringUtils.hasText(invoice.getPiCurr())) {
+                String curr = Optional.ofNullable(pm.getPrice())
+                        .map(PlanPriceEntity::getPpriceCurr)
+                        .filter(StringUtils::hasText)
+                        .orElse("KRW");
+                invoice.setPiCurr(curr);
+            }
+            if (invoice.getPiStart() != null && invoice.getPiEnd() == null) {
+                invoice.setPiEnd(invoice.getPiStart().plusMonths(monthsResolved));
+            }
+            invoiceRepo.save(invoice);
 
-        	// 1개월 기준가
-        	BigDecimal oneMonth = (plan != null)
-        	        ? priceRepo.findActiveByPlanIdAndMonths(plan.getPlanId(), 1)
-        	                   .map(PlanPriceEntity::getPpriceAmount)
-        	                   .orElse(null)
-        	        : null;
-
-        	// 기대 금액 계산(할인 적용)
-        	BigDecimal expected;
-        	if (monthsResolved == 1) {
-        	    expected = (plan != null)
-        	            ? priceRepo
-        	                .findFirstByPlan_PlanIdAndPterm_PtermMonthAndPpriceBilModeIgnoreCaseAndPpriceActiveTrue(
-        	                        plan.getPlanId(), 1, "MONTHLY")
-        	                .map(PlanPriceEntity::getPpriceAmount)
-        	                .orElse(invoice.getPiAmount())
-        	            : invoice.getPiAmount();
-        	} else if (oneMonth != null) {
-        	    BigDecimal gross = oneMonth.multiply(BigDecimal.valueOf(monthsResolved));
-        	    expected = gross.multiply(BigDecimal.valueOf(100 - discountRate))
-        	                    .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-        	} else {
-        	    expected = invoice.getPiAmount();
-        	}
-
-        	// 인보이스 금액/화폐/기간 보정
-        	if (expected != null && invoice.getPiAmount() != null
-        	        ? expected.compareTo(invoice.getPiAmount()) != 0
-        	        : expected != invoice.getPiAmount()) {
-        	    invoice.setPiAmount(expected);
-        	}
-        	if (!StringUtils.hasText(invoice.getPiCurr())) {
-        	    String curr = Optional.ofNullable(pm.getPrice())
-        	            .map(PlanPriceEntity::getPpriceCurr)
-        	            .filter(StringUtils::hasText)
-        	            .orElse("KRW");
-        	    invoice.setPiCurr(curr);
-        	}
-        	if (invoice.getPiStart() != null && invoice.getPiEnd() == null) {
-        	    invoice.setPiEnd(invoice.getPiStart().plusMonths(monthsResolved));
-        	}
-        	invoiceRepo.save(invoice);
-
-        	log.info("[InvoiceGuard] invoice {} corrected: months={}, amount={}, discountRate={}%",
-        	        invoice.getPiId(), monthsResolved, invoice.getPiAmount(), discountRate);
+            log.info("[InvoiceGuard] invoice {} corrected via PricingService: months={}, rate={}%, amount={}",
+                    invoice.getPiId(), q.months(), q.discountRate(), q.amountKRW());
         } catch (Exception e) {
             log.warn("[InvoiceGuard] failed to correct invoice amount (continue). cause={}", e.toString());
         }
@@ -387,27 +347,12 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
                 .or(() -> priceRepo.findBestPrice(plan.getPlanId(), terms.getPtermId(), mode))
                 .orElseThrow(() -> new IllegalStateException("가격 정보가 없습니다. plan=" + planCode + ", months=" + months));
 
-        // 할인율: ptermId 기준 → 없으면 months 보조
-        int discountRate = discountRepo.findRateByPterm(terms.getPtermId())
-                .or(() -> discountRepo.findRateByMonths(months))
-                .orElse(0);
-        log.info("[DiscountCheck] ptermId={}, months={}, rate={}%", terms.getPtermId(), months, discountRate);
-
-        // 1개월 기준가
-        BigDecimal oneMonth = priceRepo.findActiveByPlanIdAndMonths(plan.getPlanId(), 1)
-                .map(PlanPriceEntity::getPpriceAmount)
-                .orElse(price.getPpriceAmount());
-
-        // 할인 금액 계산
-        final BigDecimal amount =
-                (months == 1)
-                        ? price.getPpriceAmount()
-                        : oneMonth.multiply(BigDecimal.valueOf(months))
-                                  .multiply(BigDecimal.valueOf(100 - discountRate))
-                                  .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-
+        // ✅ 최종 금액은 PricingService에서 산출
+        PlanPriceService.Quote q = pricingService.quoteByPlanAndMonths(plan.getPlanId(), months);
+        BigDecimal amount = BigDecimal.valueOf(q.amountKRW());
         final String currency = StringUtils.hasText(price.getPpriceCurr()) ? price.getPpriceCurr() : "KRW";
 
+        log.info("[DiscountCheck] planId={}, months={}, rate={}%, amount={}", plan.getPlanId(), months, q.discountRate(), q.amountKRW());
 
         // PlanMember 생성/갱신
         PlanMember pm = planMemberRepo.findByMember_Mid(mid).orElse(null);
@@ -464,8 +409,8 @@ public class PlanSubscriptionServiceImpl implements PlanSubscriptionService {
                     .piStat(PiStatus.PENDING)
                     .build();
             invoiceRepo.save(invoice);
-            log.info("[subscriptions/charge-and-confirm] PENDING_CREATED mid={}, invoiceId={}, discountRate={}% (ptermId={})",
-                    mid, invoice.getPiId(), discountRate, terms.getPtermId());
+            log.info("[subscriptions/charge-and-confirm] PENDING_CREATED mid={}, invoiceId={}, discountRate={}% (months={})",
+                    mid, invoice.getPiId(), q.discountRate(), months);
         }
 
         return chargeByBillingKeyAndConfirm(invoice.getPiId(), mid, months);
