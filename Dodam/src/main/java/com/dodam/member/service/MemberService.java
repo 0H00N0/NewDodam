@@ -11,11 +11,11 @@ import com.dodam.member.repository.ChildRepository;
 import com.dodam.member.repository.LoginmethodRepository;
 import com.dodam.member.repository.MemberRepository;
 import com.dodam.member.repository.MemtypeRepository;
-import com.dodam.member.entity.MemberEntity;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -50,6 +50,22 @@ public class MemberService {
     }
 
     public void signup(MemberDTO dto) {
+    	
+    	 	// (선택) 로직 차원에서도 재검증
+    	    if (dto.getMbirth() != null && dto.getMbirth().isAfter(LocalDate.now())) {
+    	        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "생년월일은 미래일 수 없습니다.");
+    	    }
+    	    if (dto.getChildren() != null) {
+    	        for (ChildDTO ch : dto.getChildren()) {
+    	            if (ch.getChbirth() != null && ch.getChbirth().isAfter(LocalDate.now())) {
+    	                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 미래일 수 없습니다.");
+    	            }
+    	            if (ch.getChbirth() != null && ch.getChbirth().isBefore(LocalDate.of(2000, 1, 1))) {
+    	            	throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 2000-01-01 이후여야 합니다.");
+    	            }
+    	        }
+    	    }
+    	
         // ✅ (중요) ACTIVE 기준 중복 체크 — 재가입 허용 위해
         memberRepository.findByMidAndMemstatus(dto.getMid(), MemberEntity.MemStatus.ACTIVE)
             .ifPresent(m -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid"); });

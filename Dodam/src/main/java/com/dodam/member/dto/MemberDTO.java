@@ -2,6 +2,8 @@ package com.dodam.member.dto;
 
 import java.time.LocalDate;
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import jakarta.validation.constraints.PastOrPresent;
 
 import com.dodam.member.entity.MemberEntity;
 import lombok.*;
@@ -16,7 +18,11 @@ public class MemberDTO {
     private String mtel;
     private String maddr;
     private Long   mpost;
+    
+    @PastOrPresent(message = "생년월일은 미래일 수 없습니다.")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate mbirth;
+    
     private String mnic;
 
     // 화면 출력용
