@@ -90,12 +90,12 @@ public class MemberService {
     public MemberDTO login(String mid, String rawPw) {
         // ✅ ACTIVE만 로그인 허용
         var e = memberRepository.findByMidAndMemstatus(mid, MemberEntity.MemStatus.ACTIVE)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid id/pw"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 혹은 비밀번호가 맞지 않습니다."));
 
         // ✅ 해시 검증
         if (!passwordEncoder.matches(rawPw, e.getMpw())) {
             // (선택) 평문→해시 마이그레이션이 필요하면 아래 주석 블록 참고
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid id/pw");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 혹은 비밀번호가 맞지 않습니다.");
         }
 
         return new MemberDTO(e);
