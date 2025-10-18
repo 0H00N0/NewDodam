@@ -10,6 +10,7 @@ import com.dodam.plan.enums.PlanEnums.PmBillingMode;
 import com.dodam.plan.enums.PlanEnums.PmStatus;
 import com.dodam.plan.repository.*;
 import com.dodam.plan.service.PlanPortoneClientService;
+import com.dodam.plan.service.PlanPriceService;
 import com.dodam.plan.service.PlanSubscriptionService;
 import jakarta.servlet.http.HttpSession;
 import lombok.Data;
@@ -43,6 +44,7 @@ public class PlanSubscriptionController {
 
     private final PlanSubscriptionService subscriptionService;
     private final PlanPortoneClientService portoneClient;
+    private final PlanPriceService pricingService;
 
     /** ✅ 인보이스만 만들고 끝(기존 로직 유지) */
     @PostMapping(value = "/start", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -97,7 +99,8 @@ public class PlanSubscriptionController {
                 .orElseThrow(() -> new IllegalStateException(
                         "가격 정보가 없습니다. plan=" + planCode + ", months=" + months));
 
-        final BigDecimal amount = price.getPpriceAmount();
+        final var quote = pricingService.quoteByPlanAndMonths(plan.getPlanId(), months);
+        final BigDecimal amount = BigDecimal.valueOf(quote.amountKRW());
         final String currency = StringUtils.hasText(price.getPpriceCurr()) ? price.getPpriceCurr() : "KRW";
 
         PlanMember pm = planMemberRepo.findByMember_Mid(mid).orElse(null);

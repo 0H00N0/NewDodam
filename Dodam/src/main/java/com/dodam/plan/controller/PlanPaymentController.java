@@ -10,6 +10,7 @@ import com.dodam.plan.repository.PlanPaymentRepository;
 import com.dodam.plan.service.PlanBillingService;
 import com.dodam.plan.service.PlanPaymentGatewayService;
 import com.dodam.plan.service.PlanPortoneClientService;
+import com.dodam.plan.service.PlanPriceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpSession;
 import lombok.Data;
@@ -40,6 +41,7 @@ public class PlanPaymentController {
     private final PlanBillingService billingSvc;
     
     private final PlanPortoneClientService portoneClient;
+    private final PlanPriceService pricingService;
 
     @Value("${payments.confirm.immediate.enabled:false}")
     private boolean confirmImmediate;
@@ -86,7 +88,14 @@ public class PlanPaymentController {
         }
 
         final String customerId = resolveCustomerId(pm.getMember());
-        final long amount = toLongAmount(inv.getPiAmount());
+        int months = Optional.ofNullable(pm.getPmCycle()).orElse(1);
+        long amount = pricingService.quoteByPlanAndMonths(pm.getPlan().getPlanId(), months).amountKRW();
+        // ✅ 인보이스 금액/통화 보정(저장)
+        if (inv.getPiAmount() == null || inv.getPiAmount().longValue() != amount) {
+            inv.setPiAmount(java.math.BigDecimal.valueOf(amount));
+            if (!StringUtils.hasText(inv.getPiCurr())) inv.setPiCurr("KRW");
+            invoiceRepo.save(inv);
+        }
 
         // ✅ 서버가 만드는 유일한 orderId: inv{invoiceId}-ts{epochMillis}
         final String orderId = "inv" + invoiceId + "-ts" + System.currentTimeMillis();

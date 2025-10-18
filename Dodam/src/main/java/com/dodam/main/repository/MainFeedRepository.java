@@ -1,4 +1,3 @@
-// com/dodam/main/repository/MainFeedRepository.java
 package com.dodam.main.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,65 +9,60 @@ import java.util.List;
 
 public interface MainFeedRepository extends JpaRepository<ReviewEntity, Long> {
 
-    /** 최근 리뷰 (상품 대표 이미지 포함) */
-    @Query(value = """
-        SELECT *
-          FROM (
-            SELECT
-              r.REVNUM       AS REVID,
-              r.REVTITLE     AS TITLE,
-              r.REVSCORE     AS SCORE,
-              TO_CHAR(r.REVCRE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_AT,
-              p.PRONUM       AS PROID,
-              p.PRONAME      AS PRONAME,
-              (SELECT MAX(pi.PROURL)
-                 FROM DODAM.PRODUCTIMAGE pi
-                WHERE pi.PRONUM = p.PRONUM) AS IMAGE_URL
-            FROM DODAM.REVIEW r
-            JOIN DODAM.PRODUCT p ON p.PRONUM = r.PRONUM
-            ORDER BY r.REVCRE DESC
-          )
-         WHERE ROWNUM <= :limit
-        """, nativeQuery = true)
-    List<Object[]> findLatestReviews(@Param("limit") int limit);
+	@Query(value = """
+		    SELECT *
+		      FROM (
+		        SELECT 
+		            r.REVNUM AS ID,
+		            r.REVTITLE AS TITLE,
+		            TO_CHAR(r.REVCRE, 'YYYY-MM-DD"T"HH24:MI:SS') AS REVCRE
+		          FROM REVIEW r
+		         ORDER BY r.REVCRE DESC, r.REVNUM DESC
+		      )
+		     WHERE ROWNUM <= :limit
+		    """, nativeQuery = true)
+		List<Object[]> findLatestReviews(@Param("limit") int limit);
 
-    /** 카테고리 최신 글 (공지/커뮤니티 공통) */
+
+    /** ✅ 공지/커뮤니티 최신 N개 */
     @Query(value = """
         SELECT *
           FROM (
-            SELECT
-              b.BNUM   AS POSTID,
-              b.BTITLE AS TITLE,
+            SELECT 
+              b.BNUM   AS POST_ID,
+              b.BSUB   AS TITLE,
               b.MNIC   AS AUTHOR,
               TO_CHAR(b.BDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_AT,
-              b.BCANUM  AS BCANUM,
+              b.BCANUM AS BCANUM,
               c.BCANAME AS BCANAME
-            FROM DODAM.BOARD b
-            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCANUM = b.BCANUM
+            FROM BOARD b
+            LEFT JOIN BOARDCATEGORY c ON c.BCANUM = b.BCANUM
            WHERE b.BCANUM = :bcanum
-           ORDER BY b.BDATE DESC
+           ORDER BY b.BDATE DESC, b.BNUM DESC
           )
          WHERE ROWNUM <= :limit
         """, nativeQuery = true)
-    List<Object[]> findLatestBoardsByBcanum(@Param("bcanum") Long bcanum, @Param("limit") int limit);
+    List<Object[]> findLatestBoardsByBcanum(@Param("bcanum") Long bcanum,
+                                            @Param("limit") int limit);
 
-    /** 카테고리 인기글 (임시: 최신순 → 좋아요/조회 테이블 있으면 ORDER BY 교체) */
+    /** ✅ 인기 N개 (조회수 컬럼 없음 → 최신순 대체) */
     @Query(value = """
         SELECT *
           FROM (
-            SELECT
-              b.BNUM   AS POSTID,
-              b.BTITLE AS TITLE,
+            SELECT 
+              b.BNUM   AS POST_ID,
+              b.BSUB   AS TITLE,
               b.MNIC   AS AUTHOR,
               TO_CHAR(b.BDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_AT,
-              b.BCANUM  AS BCANUM,
+              b.BCANUM AS BCANUM,
               c.BCANAME AS BCANAME
-            FROM DODAM.BOARD b
-            LEFT JOIN DODAM.BOARDCATEGORY c ON c.BCANUM = b.BCANUM
+            FROM BOARD b
+            LEFT JOIN BOARDCATEGORY c ON c.BCANUM = b.BCANUM
            WHERE b.BCANUM = :bcanum
-           ORDER BY b.BDATE DESC  -- TODO: 좋아요/조회 기준으로 교체 가능
+           ORDER BY b.BDATE DESC, b.BNUM DESC
           )
          WHERE ROWNUM <= :limit
         """, nativeQuery = true)
-    List<Object[]> findPopularBoardsByBcanum(@Param("bcanum") Long bcanum, @Param("limit") int limit);
+    List<Object[]> findPopularBoardsByBcanum(@Param("bcanum") Long bcanum,
+                                             @Param("limit") int limit);
 }

@@ -1,4 +1,3 @@
-// com/dodam/main/service/MainFeedService.java
 package com.dodam.main.service;
 
 import com.dodam.main.dto.MainBoardBriefDTO;
@@ -18,6 +17,7 @@ public class MainFeedService {
 
     private final MainFeedRepository repo;
 
+    // ===== 리뷰: 그대로 유지 =====
     public List<MainReviewBriefDTO> getLatestReviews(int limit) {
         return repo.findLatestReviews(limit).stream()
             .map(r -> new MainReviewBriefDTO(
@@ -28,15 +28,18 @@ public class MainFeedService {
                 toLong(r[4]),        // PROID
                 (String) r[5],       // PRONAME
                 (String) r[6]        // IMAGE_URL
-            )).collect(Collectors.toList());
+            ))
+            .collect(Collectors.toList());
     }
 
+    // ===== 게시글: BSUB를 TITLE로 받아 매핑 (쿼리 순서에 맞춤)
     public List<MainBoardBriefDTO> getLatestBoards(Long bcanum, int limit) {
         return repo.findLatestBoardsByBcanum(bcanum, limit).stream()
             .map(r -> new MainBoardBriefDTO(
                 toLong(r[0]), (String) r[1], (String) r[2], (String) r[3],
                 toLong(r[4]), (String) r[5]
-            )).collect(Collectors.toList());
+            ))
+            .collect(Collectors.toList());
     }
 
     public List<MainBoardBriefDTO> getPopularBoards(Long bcanum, int limit) {
@@ -44,9 +47,11 @@ public class MainFeedService {
             .map(r -> new MainBoardBriefDTO(
                 toLong(r[0]), (String) r[1], (String) r[2], (String) r[3],
                 toLong(r[4]), (String) r[5]
-            )).collect(Collectors.toList());
+            ))
+            .collect(Collectors.toList());
     }
 
+    // ===== helpers =====
     private Long toLong(Object o) {
         if (o == null) return null;
         if (o instanceof Long l) return l;

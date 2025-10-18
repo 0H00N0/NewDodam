@@ -43,7 +43,7 @@ public class MainFeedController {
 
     // ====== 편의용(카테고리 고정) ======
     private static final long BC_NOTICE = 1L;
-    private static final long BC_COMMUNITY = 21L;
+    private static final long BC_COMMUNITY = 3L;
 
     /** 최신 공지 3개(기본) */
     @GetMapping("/notice/latest")
