@@ -195,7 +195,7 @@ public class AdminPlanService {
                 .orElseThrow(() -> new EntityNotFoundException("Subscription not found with id " + pmId));
 
         PlanEnums.PmStatus newStatus = PlanEnums.PmStatus.valueOf(status.toUpperCase());
-        planMember.setPmStat(newStatus);
+        planMember.setPmStatus(newStatus);
 
         return planMemberRepository.save(planMember);
     }
