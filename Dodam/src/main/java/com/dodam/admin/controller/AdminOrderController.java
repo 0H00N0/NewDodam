@@ -31,29 +31,23 @@ public class AdminOrderController {
         return ResponseEntity.ok(adminOrderService.findOrderById(orderId));
     }
 
-    /** ✅ A. JSON 패치 (권장 경로) */
-    @PatchMapping(
-        value = "/{renNum}/tracking",
-        consumes = { MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_FORM_URLENCODED_VALUE },
-        produces = MediaType.APPLICATION_JSON_VALUE
-    )
-    public ResponseEntity<AdminOrderListResponseDTO> updateTrackingJsonOrForm(
-            @PathVariable Long renNum,
-            @RequestBody(required = false) TrackingUpdateRequest body) {
-
-        String tn = body != null ? body.getTrackingNumber() : null;
+ // AdminOrderController.java
+    @PatchMapping(value = "/{renNum}/tracking", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<AdminOrderListResponseDTO> updateTrackingUnified(
+            @PathVariable("renNum") Long renNum,  // <-- 이름 명시!
+            @RequestParam(value = "value", required = false) String qp,
+            @RequestBody(required = false) Map<String, Object> body) {
+        String tn = qp;
+        if (tn == null && body != null) {
+            Object v = body.getOrDefault("trackingNumber",
+                      body.getOrDefault("trackingNum", body.get("invoiceNo")));
+            if (v != null) tn = v.toString();
+        }
         String normalized = (tn == null || tn.trim().isEmpty()) ? null : tn.trim();
 
         adminOrderService.updateTrackingNumber(renNum, normalized);
         return ResponseEntity.ok(adminOrderService.findOrderById(renNum));
     }
 
-    /** ✅ B. 쿼리파라미터 fallback: /{renNum}/tracking?value=XXX */
-    @PatchMapping(value = "/{renNum}/tracking", params = "value", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<AdminOrderListResponseDTO> updateTrackingParam(
-            @PathVariable Long renNum, @RequestParam("value") String value) {
-        String normalized = (value == null || value.trim().isEmpty()) ? null : value.trim();
-        adminOrderService.updateTrackingNumber(renNum, normalized);
-        return ResponseEntity.ok(adminOrderService.findOrderById(renNum));
-    }
+
 }
