@@ -4,10 +4,12 @@ import com.dodam.product.dto.ProductDTO;
 import com.dodam.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.springframework.data.domain.*;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -65,6 +67,23 @@ public class ProductController {
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    @GetMapping("/{proId}/images")
+    public ResponseEntity<List<String>> getProductImages(
+            @PathVariable("proId") Long proId,
+            @RequestParam(name = "limit", required = false) Integer limit
+    ) {
+        try {
+            List<String> urls = productService.getProductImageUrls(proId, limit);
+            if (urls == null || urls.isEmpty()) return ResponseEntity.noContent().build();
+            return ResponseEntity.ok(urls);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Collections.emptyList());
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
     

@@ -76,11 +76,25 @@ public class AdminProductController {
     @PostMapping("/bulk-upload")
     public ResponseEntity<?> bulkUploadProducts(@RequestParam("file") MultipartFile csvFile) {
         try {
+            System.out.println("========================================");
+            System.out.println("==== Bulk Upload 시작 ====");
+            System.out.println("파일명: " + csvFile.getOriginalFilename());
+            System.out.println("파일 크기: " + csvFile.getSize());
+            System.out.println("========================================");
+            
             int count = adminProductService.bulkRegister(csvFile);
+            
+            System.out.println("✅ 등록 성공: " + count + "개");
             return ResponseEntity.ok(Map.of("registeredCount", count));
         } catch (Exception e) {
+            System.out.println("========================================");
+            System.out.println("❌ Bulk Upload 실패!");
+            System.out.println("에러 메시지: " + e.getMessage());
+            e.printStackTrace(); // ✅ 전체 스택 트레이스 출력
+            System.out.println("========================================");
+            
             return ResponseEntity.internalServerError()
-                    .body("일괄등록 실패: " + e.getMessage());
+                .body("일괄등록 실패: " + e.getMessage());
         }
     }
 
