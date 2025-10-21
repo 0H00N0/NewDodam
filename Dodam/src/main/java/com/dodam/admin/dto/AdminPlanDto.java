@@ -164,7 +164,7 @@ public class AdminPlanDto {
                     .memberId(entity.getMember().getMnum())
                     .memberName(entity.getMember().getMname())
                     .planName(entity.getPlan().getPlanName().getPlanName())
-                    .pmStat(entity.getPmStat().name())
+                    .pmStat(entity.getPmStatus().name())
                     .pmBilMode(entity.getPmBilMode().name())
                     .pmStart(entity.getPmStart() != null ? entity.getPmStart().format(FORMATTER) : null)
                     .pmTermStart(entity.getPmTermStart() != null ? entity.getPmTermStart().format(FORMATTER) : null)

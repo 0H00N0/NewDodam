@@ -10,7 +10,7 @@ public class ReviewStateEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "revstatenum")
-    private Long revstatenum;
+    private Long revstatenum;				// 공개여부번호 (PK)
 
     @Column(name = "revstate", length = 50) // 모두공개, 관리자만
     private String revstate;
