@@ -30,6 +30,7 @@ import static com.dodam.plan.enums.PlanEnums.PrefType;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -173,6 +174,8 @@ public class AdminPlanService {
         return buildPlanResponse(updatedPlan);
     }
 
+ // ✅ Plan 삭제 메서드에 트랜잭션 추가
+    @Transactional
     public void deletePlan(Long planId) {
         PlansEntity plan = plansRepository.findById(planId)
                 .orElseThrow(() -> new EntityNotFoundException("Plan not found with id " + planId));

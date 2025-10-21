@@ -54,7 +54,7 @@ public class AdminPlanController {
     }
 
     @DeleteMapping("/{planId}")
-    public ResponseEntity<ApiResponseDTO> deletePlan(@PathVariable Long planId) {
+    public ResponseEntity<ApiResponseDTO> deletePlan(@PathVariable("planId") Long planId) {
         adminPlanService.deletePlan(planId);
         return ResponseEntity.ok(new ApiResponseDTO(true, "Plan deleted successfully."));
     }
