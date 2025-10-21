@@ -92,4 +92,12 @@ public interface PlanInvoiceRepository extends JpaRepository<PlanInvoiceEntity, 
 		var list = findAllByPmIdOrderByEndDesc(pmId);
 		return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
 	}
+	
+	// ✅ UID 대소문자/공백 무시 일치
+    @Query("select i from PlanInvoiceEntity i where lower(trim(i.piUid)) = lower(trim(:uid))")
+    Optional<PlanInvoiceEntity> findByPiUidInsensitive(@Param("uid") String uid);
+
+    // ✅ UID prefix(inv###-) 로 최근건 1개
+    @Query("select i from PlanInvoiceEntity i where i.piUid like concat(:prefix, '%') order by i.piId desc")
+    Optional<PlanInvoiceEntity> findTopByPiUidStartsWith(@Param("prefix") String prefix);
 }
