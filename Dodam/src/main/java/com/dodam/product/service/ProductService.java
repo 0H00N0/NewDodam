@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.persistence.criteria.Predicate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +22,8 @@ public class ProductService {
     private final CategoryRepository categoryRepo;
     private final ProstateRepository prostateRepo;
     private final ProductImageRepository imageRepo;
+    
+    private final String baseImageUrl = "http://localhost:8080/images";
 
     // ====== 검색 ======
     @Transactional(readOnly = true)
@@ -210,5 +213,37 @@ public class ProductService {
             dtos.add(toDTO(p, true));
         }
         return dtos;
+    }
+    
+ // 추가: 상품 이미지 URL 목록 반환
+    @Transactional(readOnly = true)
+    public List<String> getProductImageUrls(Long proId, Integer limit) {
+        // 이미지 엔티티 필터/정렬
+        List<ProductImageEntity> imgs = imageRepo.findAll().stream()
+            .filter(img -> img.getProduct() != null && Objects.equals(img.getProduct().getPronum(), proId))
+            .sorted(Comparator.comparingInt(e -> e.getProimageorder() == null ? Integer.MAX_VALUE : e.getProimageorder()))
+            .collect(Collectors.toList());
+
+        if (imgs.isEmpty()) return Collections.emptyList();
+
+        // 파일명(또는 절대 URL) 목록으로 변환, null/blank 제거
+        List<String> names = imgs.stream()
+            .map(e -> {
+                if (e.getProurl() != null && !e.getProurl().isBlank()) return e.getProurl();
+                if (e.getProdetailimage() != null && !e.getProdetailimage().isBlank()) return e.getProdetailimage();
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+
+        if (names.isEmpty()) return Collections.emptyList();
+        // limit 적용
+        if (limit != null && limit > 0 && limit < names.size()) {
+            names = names.subList(0, limit);
+        }
+        // 절대 URL로 변환 후 반환
+        return names.stream()
+                .map(name -> name.startsWith("http") ? name : baseImageUrl + "/" + name)
+                .collect(Collectors.toList());
     }
 }
