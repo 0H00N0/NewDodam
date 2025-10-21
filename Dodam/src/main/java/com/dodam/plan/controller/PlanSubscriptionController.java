@@ -295,6 +295,68 @@ public class PlanSubscriptionController {
                     .body(Map.of("error", "INTERNAL_SERVER_ERROR"));
         }
     }
+    
+    @GetMapping(value = "/plan/checkout/summary", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> getCheckoutSummary(@RequestParam("invoiceId") String invoiceIdRaw) {
+        // inv218-ts176... 형태, 숫자만, 둘 다 허용
+        Long invoiceId = null;
+        try {
+            if (invoiceIdRaw != null && invoiceIdRaw.startsWith("inv")) {
+                // "inv{digits}-..." 에서 숫자만 추출
+                String num = invoiceIdRaw.replaceFirst("^inv","").split("-")[0].replaceAll("[^0-9]","");
+                invoiceId = Long.parseLong(num);
+            } else {
+                invoiceId = Long.parseLong(invoiceIdRaw);
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error","INVALID_INVOICE_ID"));
+        }
+
+        var invOpt = invoiceRepo.findById(invoiceId);
+        if (invOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error","INVOICE_NOT_FOUND"));
+
+        var inv = invOpt.get();
+        var pm  = inv.getPlanMember();
+        var plan = pm != null ? pm.getPlan() : null;
+
+        // 플랜 코드/이름
+        String planCode = (plan != null && plan.getPlanCode()!=null) ? plan.getPlanCode() : "";
+        String planName = planCode;
+        try {
+            var pn = (plan != null ? plan.getPlanName() : null);
+            if (pn != null && pn.getPlanName()!=null && !pn.getPlanName().isBlank()) {
+                planName = pn.getPlanName();
+            }
+        } catch (Exception ignore) {}
+
+        // 개월수: 인보이스 기간 또는 구독 주기
+        Integer months = null;
+        try {
+            if (inv.getPiStart()!=null && inv.getPiEnd()!=null) {
+                months = (int) java.time.temporal.ChronoUnit.MONTHS.between(inv.getPiStart(), inv.getPiEnd());
+            }
+            if (months == null || months <= 0) months = (pm != null ? pm.getPmCycle() : 1);
+            if (months == null || months <= 0) months = 1;
+        } catch (Exception e) { months = 1; }
+
+        // 금액/통화
+        var amount  = inv.getPiAmount();
+        var currency = (inv.getPiCurr()!=null && !inv.getPiCurr().isBlank()) ? inv.getPiCurr() : "KRW";
+
+        // 상태
+        String status = (inv.getPiStat()!=null) ? inv.getPiStat().name() : "UNKNOWN";
+
+        return ResponseEntity.ok(Map.of(
+            "invoiceId", inv.getPiId(),
+            "planCode", planCode,
+            "planName", planName,
+            "months", months,
+            "amount", amount,         // 프론트는 없으면 표시 안 하니 그대로 전달
+            "currency", currency,
+            "status", status
+            // receiptUrl 은 별도 API에서 보강 (아래 2번)
+        ));
+    }
 
     @Data
     public static class CancelRenewalReq {
