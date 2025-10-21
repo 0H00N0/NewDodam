@@ -237,13 +237,20 @@ public class ProductService {
             .collect(Collectors.toList());
 
         if (names.isEmpty()) return Collections.emptyList();
+
         // limit 적용
         if (limit != null && limit > 0 && limit < names.size()) {
             names = names.subList(0, limit);
         }
         // 절대 URL로 변환 후 반환
         return names.stream()
-                .map(name -> name.startsWith("http") ? name : baseImageUrl + "/" + name)
+                .map(name -> {
+                    if (name == null) return null;
+                    if (name.startsWith("data:")) return name;               // data URI는 그대로
+                    if (name.startsWith("http")) return name;               // 이미 절대 URL이면 그대로
+                    return baseImageUrl + "/" + name;                       // 파일명은 baseImageUrl과 합침
+                })
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 }
