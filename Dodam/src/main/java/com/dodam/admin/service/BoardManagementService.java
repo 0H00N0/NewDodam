@@ -45,16 +45,25 @@ public class BoardManagementService {
                 .collect(Collectors.toList());
     }
 
-    // --- 카테고리 삭제 ---
+    // --- 카테고리 삭제 (자식 게시글 먼저 삭제) ---
     @Transactional
     public void deleteBoardCategory(Long categoryId) {
-        if (!boardCategoryRepository.existsById(categoryId)) {
-            throw new IllegalArgumentException("해당 ID의 게시판 카테고리가 존재하지 않습니다: " + categoryId);
+        BoardCategoryEntity category = boardCategoryRepository.findById(categoryId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 ID의 게시판 카테고리가 존재하지 않습니다: " + categoryId));
+
+        // 1️⃣ 해당 카테고리에 속한 게시글 모두 조회
+        List<BoardEntity> posts = boardRepository.findByBoardCategory_BcanumOrderByBnumDesc(categoryId);
+
+        // 2️⃣ 게시글이 존재한다면 모두 삭제
+        if (!posts.isEmpty()) {
+            boardRepository.deleteAll(posts);
         }
-        boardCategoryRepository.deleteById(categoryId);
+
+        // 3️⃣ 카테고리 삭제
+        boardCategoryRepository.delete(category);
     }
 
-    // --- 특정 카테고리 게시글 조회 ---
+    // --- 특정 카테고리의 게시글 조회 ---
     public List<BoardManagementDTO.PostResponse> getPostsByCategory(Long categoryId) {
         if (!boardCategoryRepository.existsById(categoryId)) {
             throw new IllegalArgumentException("존재하지 않는 게시판 카테고리입니다: " + categoryId);
@@ -83,22 +92,18 @@ public class BoardManagementService {
     // --- 게시글 생성 (SecurityContext에서 로그인 사용자 조회) ---
     @Transactional
     public BoardManagementDTO.PostDetailResponse createPost(BoardManagementDTO.CreatePostRequest requestDto) {
-        // 로그인 사용자 ID 가져오기
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String loginId = authentication.getName();  // 로그인한 사용자의 mid
+        String loginId = authentication.getName();
 
-        // 카테고리/상태 조회
         BoardCategoryEntity category = boardCategoryRepository.findById(requestDto.getCategoryId())
                 .orElseThrow(() -> new EntityNotFoundException("카테고리를 찾을 수 없습니다: " + requestDto.getCategoryId()));
 
         BoardStateEntity defaultState = boardStateRepository.findById(1L)
                 .orElseThrow(() -> new EntityNotFoundException("기본 게시글 상태를 찾을 수 없습니다."));
 
-        // 회원 조회
         MemberEntity member = memberRepository.findByMid(loginId)
                 .orElseThrow(() -> new EntityNotFoundException("회원 정보를 찾을 수 없습니다: " + loginId));
 
-        // 게시글 엔티티 생성
         BoardEntity newPost = new BoardEntity();
         newPost.setBsub(requestDto.getTitle());
         newPost.setBcontent(requestDto.getContent());
@@ -107,20 +112,21 @@ public class BoardManagementService {
 
         // ✅ 작성자 정보 세팅
         newPost.setMnum(member.getMnum());
-        newPost.setMtnum(member.getMemtype().getMtnum()); // 빠져있던 부분 보강
+        newPost.setMtnum(member.getMemtype().getMtnum());
         newPost.setMid(member.getMid());
         newPost.setMnic(member.getMnic());
 
         BoardEntity savedPost = boardRepository.save(newPost);
         return BoardManagementDTO.PostDetailResponse.fromEntity(savedPost);
     }
- // --- 카테고리 수정 ---
+
+    // --- 카테고리 수정 ---
     @Transactional
     public BoardManagementDTO.BoardCategoryResponse updateBoardCategory(Long categoryId, BoardManagementDTO.UpdateBoardCategoryRequest requestDto) {
         BoardCategoryEntity category = boardCategoryRepository.findById(categoryId)
                 .orElseThrow(() -> new EntityNotFoundException("카테고리를 찾을 수 없습니다: " + categoryId));
 
-        category.setBcaname(requestDto.getName()); // 새 이름 반영
+        category.setBcaname(requestDto.getName());
         BoardCategoryEntity updated = boardCategoryRepository.save(category);
 
         return BoardManagementDTO.BoardCategoryResponse.fromEntity(updated);
@@ -132,18 +138,17 @@ public class BoardManagementService {
         BoardEntity post = boardRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException("게시글을 찾을 수 없습니다: " + postId));
 
-        // 제목/내용 변경
         post.setBsub(requestDto.getTitle());
         post.setBcontent(requestDto.getContent());
 
-        // 카테고리 변경 가능하도록
+        // 카테고리 변경 가능
         if (requestDto.getCategoryId() != null) {
             BoardCategoryEntity category = boardCategoryRepository.findById(requestDto.getCategoryId())
                     .orElseThrow(() -> new EntityNotFoundException("카테고리를 찾을 수 없습니다: " + requestDto.getCategoryId()));
             post.setBoardCategory(category);
         }
 
-        // 상태 변경 가능하도록
+        // 상태 변경 가능
         if (requestDto.getStateId() != null) {
             BoardStateEntity state = boardStateRepository.findById(requestDto.getStateId())
                     .orElseThrow(() -> new EntityNotFoundException("게시글 상태를 찾을 수 없습니다: " + requestDto.getStateId()));
