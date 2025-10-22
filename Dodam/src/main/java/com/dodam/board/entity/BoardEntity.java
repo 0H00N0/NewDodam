@@ -29,7 +29,7 @@ public class BoardEntity {
     private BoardCategoryEntity boardCategory;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bsnum", nullable = false)
+    @JoinColumn(name = "bsnum", nullable = true)
     private BoardStateEntity boardState;
 
     @Column(name = "bsub", length = 255)
