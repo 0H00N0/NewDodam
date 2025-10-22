@@ -59,7 +59,9 @@ public class SecurityConfig {
                 "/cart/**",
                 "/rent/**",
                 "/test/**",
-                "/product-inquiries/**"
+                "/product-inquiries/**",
+                "/member/findPwByMemail",
+                "/member/findPwByMtel"
             ))
             // 인가 정책
             .authorizeHttpRequests(auth -> auth
