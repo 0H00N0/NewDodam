@@ -6,7 +6,9 @@ import lombok.RequiredArgsConstructor;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
+import org.slf4j.*;
 import org.springframework.data.domain.*;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -18,7 +20,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/products")
 @RequiredArgsConstructor
 public class ProductController {
-
+	
+	 private static final Logger log = LoggerFactory.getLogger(ProductController.class);
     private final ProductService productService;
 
     @GetMapping
@@ -70,22 +73,31 @@ public class ProductController {
         }
     }
     
-    @GetMapping("/{proId}/images")
-    public ResponseEntity<List<String>> getProductImages(
-            @PathVariable("proId") Long proId,
-            @RequestParam(name = "limit", required = false) Integer limit
-    ) {
+    @GetMapping("/{id}/images")
+    public ResponseEntity<?> getImages(
+            @PathVariable("id") Long id,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestHeader Map<String, String> headers) {
+
+        log.info("GET /api/products/{}/images called. limit={}, headers={}", id, limit, headers.keySet());
+
         try {
-            List<String> urls = productService.getProductImageUrls(proId, limit);
-            if (urls == null || urls.isEmpty()) return ResponseEntity.noContent().build();
+            List<String> urls = productService.getProductImageUrls(id, limit);
+            if (urls == null || urls.isEmpty()) {
+                log.info("No images for product id={}", id);
+                return ResponseEntity.noContent().build();
+            }
             return ResponseEntity.ok(urls);
         } catch (IllegalArgumentException ex) {
+            log.warn("IllegalArgument for id={}: {}", id, ex.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Collections.emptyList());
         } catch (Exception ex) {
-            ex.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            log.error("Error while fetching images for id=" + id, ex);
+            // 에러 디테일(개발 중) 반환
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "internal_error", "message", ex.getMessage()));
         }
     }
-    
-    
 }
+    
+

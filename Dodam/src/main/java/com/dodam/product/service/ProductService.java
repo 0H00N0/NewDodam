@@ -22,7 +22,8 @@ public class ProductService {
     private final CategoryRepository categoryRepo;
     private final ProstateRepository prostateRepo;
     private final ProductImageRepository imageRepo;
-    
+
+    // 이미지 절대 URL 기본값 (배포 시 env로 변경 권장)
     private final String baseImageUrl = "http://localhost:8080/images";
 
     // ====== 검색 ======
@@ -194,14 +195,14 @@ public class ProductService {
         }
         imageRepo.saveAll(byOrder.values());
     }
-    
-    //카테고리 조희
+
+    //카테고리 조회
     @Transactional(readOnly = true)
     public List<ProductDTO> findByCategoryName(String categoryName) {
-    	System.out.println("categoryName: [" + categoryName + "]");
-    	categoryRepo.findAll().forEach(cat -> System.out.println("catename: [" + cat.getCatename() + "]"));
-    	
-    	CategoryEntity category = categoryRepo.findAll().stream()
+        System.out.println("categoryName: [" + categoryName + "]");
+        categoryRepo.findAll().forEach(cat -> System.out.println("catename: [" + cat.getCatename() + "]"));
+
+        CategoryEntity category = categoryRepo.findAll().stream()
             .filter(cat -> categoryName.equals(cat.getCatename()))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("category not found: " + categoryName));
@@ -214,11 +215,11 @@ public class ProductService {
         }
         return dtos;
     }
-    
- // 추가: 상품 이미지 URL 목록 반환
+
+    // 추가: 상품 이미지 URL 목록 반환 (견고한 처리)
     @Transactional(readOnly = true)
     public List<String> getProductImageUrls(Long proId, Integer limit) {
-        // 이미지 엔티티 필터/정렬
+        // 이미지 엔티티 필터/정렬 (리포지토리에 전용 메소드가 있으면 대체 권장)
         List<ProductImageEntity> imgs = imageRepo.findAll().stream()
             .filter(img -> img.getProduct() != null && Objects.equals(img.getProduct().getPronum(), proId))
             .sorted(Comparator.comparingInt(e -> e.getProimageorder() == null ? Integer.MAX_VALUE : e.getProimageorder()))
@@ -226,11 +227,13 @@ public class ProductService {
 
         if (imgs.isEmpty()) return Collections.emptyList();
 
-        // 파일명(또는 절대 URL) 목록으로 변환, null/blank 제거
+        // 파일명(또는 절대 URL / data URI) 목록으로 변환, null/blank 제거
         List<String> names = imgs.stream()
             .map(e -> {
-                if (e.getProurl() != null && !e.getProurl().isBlank()) return e.getProurl();
-                if (e.getProdetailimage() != null && !e.getProdetailimage().isBlank()) return e.getProdetailimage();
+                String prourl = e.getProurl();
+                String detail = e.getProdetailimage();
+                if (prourl != null && !prourl.isBlank()) return prourl.trim();
+                if (detail != null && !detail.isBlank()) return detail.trim();
                 return null;
             })
             .filter(Objects::nonNull)
@@ -238,12 +241,31 @@ public class ProductService {
 
         if (names.isEmpty()) return Collections.emptyList();
 
+        // 필터: 매우 작은 data URI(예: 1x1 투명 GIF) 또는 너무 짧은 data URI 제거
+        final String TINY_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+        final int MIN_DATA_URI_LENGTH = 200; // 필요에 따라 조정
+
+        List<String> filtered = names.stream()
+            .filter(n -> {
+                if (n == null) return false;
+                if (n.startsWith("data:")) {
+                    // 짧은 data URI 또는 기본 투명 GIF 제거
+                    if (n.equals(TINY_GIF)) return false;
+                    return n.length() >= MIN_DATA_URI_LENGTH;
+                }
+                return true;
+            })
+            .collect(Collectors.toList());
+
+        if (filtered.isEmpty()) return Collections.emptyList();
+
         // limit 적용
-        if (limit != null && limit > 0 && limit < names.size()) {
-            names = names.subList(0, limit);
+        if (limit != null && limit > 0 && limit < filtered.size()) {
+            filtered = filtered.subList(0, limit);
         }
+
         // 절대 URL로 변환 후 반환
-        return names.stream()
+        return filtered.stream()
                 .map(name -> {
                     if (name == null) return null;
                     if (name.startsWith("data:")) return name;               // data URI는 그대로
