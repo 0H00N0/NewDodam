@@ -67,7 +67,7 @@ public class MemberService {
 
         // ✅ (중요) ACTIVE 기준 중복 체크 — 재가입 허용 위해
         memberRepository.findByMidAndMemstatus(dto.getMid(), MemberEntity.MemStatus.ACTIVE)
-            .ifPresent(m -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid"); });
+            .ifPresent(m -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."); });
 
         // ✅ [신규] 전화번호 정규화(숫자만) + ACTIVE 중복 차단
         String mtelDigits = dto.getMtel() == null ? null : dto.getMtel().replaceAll("\\D", "");
