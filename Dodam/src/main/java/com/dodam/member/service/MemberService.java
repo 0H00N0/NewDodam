@@ -50,25 +50,34 @@ public class MemberService {
     }
 
     public void signup(MemberDTO dto) {
-    	
-    	 	// (선택) 로직 차원에서도 재검증
-    	    if (dto.getMbirth() != null && dto.getMbirth().isAfter(LocalDate.now())) {
-    	        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "생년월일은 미래일 수 없습니다.");
-    	    }
-    	    if (dto.getChildren() != null) {
-    	        for (ChildDTO ch : dto.getChildren()) {
-    	            if (ch.getChbirth() != null && ch.getChbirth().isAfter(LocalDate.now())) {
-    	                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 미래일 수 없습니다.");
-    	            }
-    	            if (ch.getChbirth() != null && ch.getChbirth().isBefore(LocalDate.of(2000, 1, 1))) {
-    	            	throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 2000-01-01 이후여야 합니다.");
-    	            }
-    	        }
-    	    }
-    	
+        // (선택) 로직 차원에서도 재검증
+        if (dto.getMbirth() != null && dto.getMbirth().isAfter(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "생년월일은 미래일 수 없습니다.");
+        }
+        if (dto.getChildren() != null) {
+            for (ChildDTO ch : dto.getChildren()) {
+                if (ch.getChbirth() != null && ch.getChbirth().isAfter(LocalDate.now())) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 미래일 수 없습니다.");
+                }
+                if (ch.getChbirth() != null && ch.getChbirth().isBefore(LocalDate.of(2000, 1, 1))) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자녀 생년월일은 2000-01-01 이후여야 합니다.");
+                }
+            }
+        }
+
         // ✅ (중요) ACTIVE 기준 중복 체크 — 재가입 허용 위해
         memberRepository.findByMidAndMemstatus(dto.getMid(), MemberEntity.MemStatus.ACTIVE)
             .ifPresent(m -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "duplicated mid"); });
+
+        // ✅ [신규] 전화번호 정규화(숫자만) + ACTIVE 중복 차단
+        String mtelDigits = dto.getMtel() == null ? null : dto.getMtel().replaceAll("\\D", "");
+        dto.setMtel(mtelDigits); // 저장 일관성 유지
+        if (mtelDigits != null && !mtelDigits.isBlank()) {
+            boolean telDup = memberRepository.existsByMtelAndMemstatus(mtelDigits, MemberEntity.MemStatus.ACTIVE);
+            if (telDup) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "해당 전화번호는 이미 사용 중입니다. 회원가입을 하셨다면 아이디 및 비밀번호를 찾아주세요.");
+            }
+        }
 
         // ✅ 비밀번호 해시 저장
         String encoded = passwordEncoder.encode(dto.getMpw());
@@ -82,7 +91,7 @@ public class MemberService {
                 .memail(dto.getMemail())
                 .mbirth(dto.getMbirth())
                 .mnic(dto.getMnic())
-                .mtel(dto.getMtel())
+                .mtel(dto.getMtel())          // ← 정규화된 값 저장
                 .loginmethod(getOrCreateLocal())
                 .memtype(getOrCreateDefault())
                 .memstatus(MemberEntity.MemStatus.ACTIVE) // ✅ 기본 ACTIVE
@@ -110,7 +119,6 @@ public class MemberService {
 
         // ✅ 해시 검증
         if (!passwordEncoder.matches(rawPw, e.getMpw())) {
-            // (선택) 평문→해시 마이그레이션이 필요하면 아래 주석 블록 참고
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "아이디 혹은 비밀번호가 맞지 않습니다.");
         }
 
@@ -130,8 +138,17 @@ public class MemberService {
         MemberEntity entity = memberRepository.findByMidAndMemstatus(sid, MemberEntity.MemStatus.ACTIVE)
             .orElseThrow(() -> new RuntimeException("회원 없음 또는 탈퇴"));
 
+        // ✅ [신규] 전화번호 변경 시: 숫자만 보관 + ACTIVE 중복 차단
+        String newMtel = dto.getMtel() == null ? null : dto.getMtel().replaceAll("\\D", "");
+        if (newMtel != null && !newMtel.equals(entity.getMtel())) {
+            boolean telDup = memberRepository.existsByMtelAndMemstatus(newMtel, MemberEntity.MemStatus.ACTIVE);
+            if (telDup) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "해당 전화번호는 이미 사용 중입니다. 회원가입을 하셨다면 아이디 및 비밀번호를 찾아주세요.");
+            }
+        }
+
         entity.setMemail(dto.getMemail());
-        entity.setMtel(dto.getMtel());
+        entity.setMtel(newMtel);              // ← 정규화 반영
         entity.setMaddr(dto.getMaddr());
         entity.setMnic(dto.getMnic());
         entity.setMpost(dto.getMpost());
@@ -164,7 +181,6 @@ public class MemberService {
         if (!passwordEncoder.matches(dto.getCurrentPw(), entity.getMpw())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "현재 비밀번호가 일치하지 않습니다.");
         }
-        
 
         // 새 비밀번호 저장 (기존 주석/흐름 유지)
         entity.setMpw(passwordEncoder.encode(dto.getNewPw()));

@@ -31,4 +31,8 @@ public interface MemberRepository extends JpaRepository<MemberEntity, Long> {
     //관리자용 회원 상태별 조회
     List<MemberEntity> findByMemstatus(MemStatus status);
 
+    // ⬇️⬇️⬇️ (신규) 전화번호 중복 체크용 - ACTIVE 한정
+    Optional<MemberEntity> findByMtelAndMemstatus(String mtel, MemStatus memstatus);
+    boolean existsByMtelAndMemstatus(String mtel, MemStatus memstatus);
+    // ⬆️⬆️⬆️
 }
