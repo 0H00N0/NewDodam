@@ -76,7 +76,7 @@ public class ProductController {
     @GetMapping("/{id}/images")
     public ResponseEntity<?> getImages(
             @PathVariable("id") Long id,
-            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "limit", required = false, defaultValue = "1") Integer limit,
             @RequestHeader Map<String, String> headers) {
 
         log.info("GET /api/products/{}/images called. limit={}, headers={}", id, limit, headers.keySet());
