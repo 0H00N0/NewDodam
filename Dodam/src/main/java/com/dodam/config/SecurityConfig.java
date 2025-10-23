@@ -1,3 +1,4 @@
+// src/main/java/com/dodam/config/SecurityConfig.java
 package com.dodam.config;
 
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;   // ✅ 쿠키 기반
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler; // ✅ 호환성 보강
 import org.springframework.web.cors.*;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -31,39 +34,42 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-           // CORS
+            // CORS
             .cors(cors -> cors.configurationSource(corsSource()))
-            // CSRF: 상태변경 엔드포인트만 예외
-            .csrf(csrf -> csrf.ignoringRequestMatchers(
-                "/oauth/**",
-                "/member/loginForm",
-                "/member/logout",
-                "/member/updateProfile",
-                "/member/changePw",
-                "/member/changePwDirect",
-                "/member/signup",
-                "/member/delete",
-                "/webhooks/pg",
-                "/payments/**",
-                "/subscriptions/**",
-                "/billing-keys/**",
-                "/pg/payments/**",
-                "/pg/transactions/**",
-                "/events/**",
-                "/pg/**",
-                "/api/products/new", 
-                "/api/products/popular",
-                "/api/reviews/count",
-                "/api/products/**",
-                "/admin/**", 
-                "/cart/**",
-                "/rent/**",
-                "/test/**",
-                "/product-inquiries/**",
-                "/member/findPwByMemail",
-                "/member/findPwByMtel"
-            ))
-            // 인가 정책
+            // CSRF (쿠키 기반, 프런트 axios와 일치)
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()) // ✅ XSRF-TOKEN 쿠키 자동 발급
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())    // ✅ Spring Security 6 호환
+                .ignoringRequestMatchers(
+                    "/oauth/**",
+                    "/member/loginForm",
+                    "/member/logout",
+                    "/member/updateProfile",
+                    "/member/changePw",
+                    "/member/changePwDirect",
+                    "/member/signup",
+                    "/member/delete",
+                    "/webhooks/pg",
+                    "/payments/**",
+                    "/subscriptions/**",
+                    "/billing-keys/**",
+                    "/pg/payments/**",
+                    "/pg/transactions/**",
+                    "/events/**",
+                    "/pg/**",
+                    "/api/products/new",
+                    "/api/products/popular",
+                    "/api/reviews/count",
+                    "/api/products/**",
+                    "/admin/**",
+                    "/cart/**",
+                    "/rent/**",
+                    "/test/**",
+                    "/product-inquiries/**",
+                    "/member/findPwByMemail",
+                    "/member/findPwByMtel"
+                )
+            )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -79,12 +85,22 @@ public class SecurityConfig {
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/events/**").permitAll()
-                .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
-                .requestMatchers("/rent/**").authenticated()
-                // ✅ 추가(권장): 상품 문의는 로그인 필요
-                .requestMatchers("/product-inquiries/**").authenticated()
-                // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
-                .requestMatchers("/board/**").authenticated()
+                .requestMatchers("/test/**").permitAll()
+
+                // ✅ 커뮤니티 열람 전부 허용 (순서 중요)
+                .requestMatchers(HttpMethod.GET,
+                    "/board/community",
+                    "/board/community/**",
+                    "/board/community/*/comments"
+                ).permitAll()
+
+                // ✅ 상태 변경은 인증 필요
+                .requestMatchers(HttpMethod.POST, "/board/**").authenticated()
+                .requestMatchers(HttpMethod.PUT, "/board/**").authenticated()
+                .requestMatchers(HttpMethod.DELETE, "/board/**").authenticated()
+
+                // ✅ CSRF 토큰 발급(읽기 전용)도 허용 (선택)
+                .requestMatchers(HttpMethod.GET, "/csrf").permitAll()
 
                 // ✅ 관리자 전용
                 .requestMatchers("/admin/**").hasRole("ADMIN")
@@ -93,12 +109,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/products/new", "/api/products/popular").permitAll()
                 .requestMatchers("/api/products/**", "/api/reviews/count").permitAll()
 
-                // 그 외 기본은 전부 허용
                 .anyRequest().permitAll()
             )
-            // 세션 기반
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
-            // 세션 인증 주입 필터
             .addFilterBefore(sessionAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -107,7 +120,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
-        c.setAllowCredentials(true); 
+        c.setAllowCredentials(true);
         c.setAllowedOrigins(List.of(
             front,
             "http://127.0.0.1:3000"
