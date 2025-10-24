@@ -18,4 +18,10 @@ public interface CommunityCommentRepository extends JpaRepository<CommentEntity,
     @Transactional
     @Query("delete from CommentEntity c where c.board = :board")
     void deleteByBoard(@Param("board") BoardEntity board);
+    
+    // 게시글별 조회
+    List<CommentEntity> findByBoard_BnumOrderByCdateAsc(Long bnum);
+
+    // 대댓글 존재 여부(연관 통해 속성 타기: parent.conum)
+    boolean existsByParent_Conum(Long conum);
 }

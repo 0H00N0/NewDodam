@@ -6,6 +6,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+import jakarta.validation.constraints.NotBlank;
+
 public class CommunityDTO {
   @Getter @Setter public static class CreateReq {
     private Long mnum;
@@ -49,8 +54,13 @@ public class CommunityDTO {
     private Long parentConum;         // ✅ 대댓글 부모 ID (최상위는 null)
   }
 
-  @Getter @Setter public static class CommentUpdateReq {
-    private String ccontent;
+  @Getter @Setter
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  public static class CommentUpdateReq {
+      /** 프런트가 ccontent, content, text 어느 키로 보내도 수신 */
+      @NotBlank(message = "내용을 입력하세요.")
+      @JsonAlias({ "content", "text" })
+      private String ccontent;
   }
 
   @Getter @Setter @Builder
