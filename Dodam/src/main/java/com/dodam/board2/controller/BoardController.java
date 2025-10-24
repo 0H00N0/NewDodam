@@ -29,7 +29,8 @@ public class BoardController {
     // 저장
     @PostMapping
     public BoardEntity createBoard(@RequestBody BoardEntity board) {
-        return boardService.saveBoard(board);
+        System.out.println("efwefwe");
+    	return boardService.saveBoard(board);
     }
 
     // 삭제
