@@ -44,22 +44,22 @@ public class ReviewController {
 	// 리뷰 작성
 	@PostMapping
 	public ResponseEntity<?> addReview(@RequestBody MyReviewDTO dto) {
-		MemberEntity member = memberRepository.findById(dto.getPronum())
-				.orElseThrow(() -> new IllegalArgumentException("회원 정보를 찾을 수 없습니다."));
-		ProductEntity product = productRepository.findById(dto.getPronum())
-				.orElseThrow(() -> new IllegalArgumentException("상품 정보를 찾을 수 없습니다."));
+	    MemberEntity member = memberRepository.findById(dto.getMnum())
+	            .orElseThrow(() -> new IllegalArgumentException("회원 정보를 찾을 수 없습니다."));
+	    ProductEntity product = productRepository.findById(dto.getPronum())
+	            .orElseThrow(() -> new IllegalArgumentException("상품 정보를 찾을 수 없습니다."));
 
-		ReviewEntity review = new ReviewEntity();
-		review.setMember(member);
-		review.setProduct(product);
-		review.setRevtitle(dto.getRevtitle());
-		review.setRevtext(dto.getRevtext());
-		review.setRevscore(dto.getRevscore());
-		review.setRevcre(LocalDateTime.now());
+	    ReviewEntity review = new ReviewEntity();
+	    review.setMember(member);
+	    review.setProduct(product);
+	    review.setRevtitle(dto.getRevtitle());
+	    review.setRevtext(dto.getRevtext());
+	    review.setRevscore(dto.getRevscore());
+	    review.setRevcre(LocalDateTime.now());
 
-		reviewRepository.save(review);
+	    reviewRepository.save(review);
 
-		return ResponseEntity.ok("리뷰가 등록되었습니다.");
+	    return ResponseEntity.ok("리뷰가 등록되었습니다.");
 	}
 
 	// 리뷰 수정

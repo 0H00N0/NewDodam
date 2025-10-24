@@ -85,6 +85,13 @@ public class SecurityConfig {
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/events/**").permitAll()
+                .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
+                .requestMatchers("/rent/**").authenticated()
+                .requestMatchers("/reviews/**").permitAll()
+                // ✅ 추가(권장): 상품 문의는 로그인 필요
+                .requestMatchers("/product-inquiries/**").authenticated()
+                // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
+                .requestMatchers("/board/**").authenticated()
                 .requestMatchers("/test/**").permitAll()
 
                 // ✅ 커뮤니티 열람 전부 허용 (순서 중요)
