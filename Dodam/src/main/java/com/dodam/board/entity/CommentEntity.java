@@ -1,5 +1,7 @@
 package com.dodam.board.entity;
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -24,6 +26,10 @@ public class CommentEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "BNUM", nullable = false) // BOARD(BNUM) 참조
     private BoardEntity board;
+    
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name="PARENTCONUM")
+    private CommentEntity parent;   // ✅ 부모 댓글
 
     @Column(name = "CCONTENT", length = 1000)
     private String ccontent;
@@ -33,4 +39,20 @@ public class CommentEntity {
 
     @Column(name = "MID", nullable = false, length = 255)
     private String mid;
+    
+    @Column(name = "cdate")
+    private LocalDateTime cdate;
+
+    @Column(name = "cedate")
+    private LocalDateTime cedate;
+
+    @PrePersist
+    public void onCreate() {
+        this.cdate = LocalDateTime.now();
+        this.cedate = this.cdate;
+    }
+    @PreUpdate
+    public void onUpdate() {
+        this.cedate = LocalDateTime.now();
+    }
 }
