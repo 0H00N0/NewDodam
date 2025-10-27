@@ -30,8 +30,7 @@ public class SessionAuthFilter extends OncePerRequestFilter {
         "/static/", 
         "/assets/", 
         "/favicon", 
-        "/css/", "/js/", "/img/", "/images/",
-        "/static/", "/assets/", "/favicon", "/css/", "/js/", "/img/", "/images/"
+        "/css/", "/js/", "/img/", "/images/"
     );
 
     private static boolean shouldBypass(HttpServletRequest req) {
