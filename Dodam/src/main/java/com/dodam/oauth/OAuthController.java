@@ -201,6 +201,7 @@ public class OAuthController {
             if (opt.isPresent()) {
                 var m = opt.get();
                 body.put("sid", m.getMid());
+                body.put("mnum", m.getMnum());
                 body.put("name", m.getMname());
                 body.put("email", m.getMemail());
             } else {
