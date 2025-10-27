@@ -58,6 +58,7 @@ public class ReviewController {
         review.setRevscore(dto.getRevscore());
         review.setRevcre(LocalDateTime.now());
 
+        System.out.println(dto);
         reviewRepository.save(review);
         return ResponseEntity.ok("리뷰가 등록되었습니다.");
     }
