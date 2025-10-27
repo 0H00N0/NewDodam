@@ -67,7 +67,8 @@ public class SecurityConfig {
                     "/test/**",
                     "/product-inquiries/**",
                     "/member/findPwByMemail",
-                    "/member/findPwByMtel"
+                    "/member/findPwByMtel",
+                    "/reviews/**"
                 )
             )
             .authorizeHttpRequests(auth -> auth
@@ -128,11 +129,8 @@ public class SecurityConfig {
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowCredentials(true);
-        c.setAllowedOrigins(List.of(
-            front,
-            "http://127.0.0.1:3000"
-        ));
-        c.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        c.setAllowedOrigins(List.of("http://localhost:3000"));
+        c.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);
