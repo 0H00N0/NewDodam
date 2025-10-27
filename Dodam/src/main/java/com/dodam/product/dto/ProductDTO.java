@@ -36,6 +36,9 @@ public class ProductDTO {
     private Long catenum;   // category PK
     private Long prosnum;   // prostate PK
 
-    // 이미지
+    // 이미지 전체 리스트
     private List<ProductImageDTO> images;
+
+    // ✅ 대표 이미지(목록용 썸네일)
+    private String thumbnailUrl;
 }

@@ -49,7 +49,10 @@ public class ProductService {
             }
             return preds.isEmpty() ? null : cb.and(preds.toArray(Predicate[]::new));
         };
-        return productRepo.findAll(spec, pageable).map(p -> toDTO(p, true));
+
+        // ✅ 각 상품 DTO에 대표 이미지(thumbnailUrl) 자동 주입
+        return productRepo.findAll(spec, pageable)
+                .map(p -> toDTO(p, true));
     }
 
     @Transactional(readOnly = true)
@@ -154,20 +157,34 @@ public class ProductService {
             .catenum(p.getCategory() != null ? p.getCategory().getCatenum() : null)
             .prosnum(p.getProstate() != null ? p.getProstate().getProsnum() : null);
 
-        if (withImages && p.getImages() != null) {
-            List<ProductImageDTO> imgs = new ArrayList<>();
-            for (ProductImageEntity e : p.getImages()) {
-                imgs.add(ProductImageDTO.builder()
-                    .proimagenum(e.getProimagenum())
-                    .proimageorder(e.getProimageorder())
-                    .prourl(e.getProurl())
-                    .prodetailimage(e.getProdetailimage())
-                    .catenum(e.getCategory() != null ? e.getCategory().getCatenum() : null)
-                    .pronum(p.getPronum())
-                    .build());
+        List<ProductImageEntity> imgs = p.getImages();
+        if (withImages && imgs != null && !imgs.isEmpty()) {
+            List<ProductImageDTO> imgDtos = imgs.stream()
+                    .map(e -> ProductImageDTO.builder()
+                            .proimagenum(e.getProimagenum())
+                            .proimageorder(e.getProimageorder())
+                            .prourl(e.getProurl())
+                            .prodetailimage(e.getProdetailimage())
+                            .catenum(e.getCategory() != null ? e.getCategory().getCatenum() : null)
+                            .pronum(p.getPronum())
+                            .build())
+                    .collect(Collectors.toList());
+            b.images(imgDtos);
+
+            // ✅ 첫 번째 이미지를 대표 이미지로 지정
+            ProductImageEntity first = imgs.get(0);
+            String raw = (first.getProurl() != null && !first.getProurl().isBlank())
+                    ? first.getProurl()
+                    : first.getProdetailimage();
+            if (raw != null && !raw.isBlank()) {
+                if (raw.startsWith("http") || raw.startsWith("data:")) {
+                    b.thumbnailUrl(raw);
+                } else {
+                    b.thumbnailUrl(baseImageUrl + "/" + raw);
+                }
             }
-            b.images(imgs);
         }
+
         return b.build();
     }
 
@@ -181,7 +198,7 @@ public class ProductService {
             ProductImageEntity row = byOrder.computeIfAbsent(im.getProimageorder(), k -> {
                 ProductImageEntity e = new ProductImageEntity();
                 e.setProduct(p);
-                e.setCategory(p.getCategory()); // productimage.catenum = product.catenum
+                e.setCategory(p.getCategory());
                 e.setProimageorder(k);
                 return e;
             });
@@ -196,30 +213,23 @@ public class ProductService {
         imageRepo.saveAll(byOrder.values());
     }
 
-    //카테고리 조회
+    // ===== 카테고리별 조회 =====
     @Transactional(readOnly = true)
     public List<ProductDTO> findByCategoryName(String categoryName) {
-        System.out.println("categoryName: [" + categoryName + "]");
-        categoryRepo.findAll().forEach(cat -> System.out.println("catename: [" + cat.getCatename() + "]"));
-
         CategoryEntity category = categoryRepo.findAll().stream()
             .filter(cat -> categoryName.equals(cat.getCatename()))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("category not found: " + categoryName));
 
         List<ProductEntity> products = productRepo.findByCategory(category);
-
-        List<ProductDTO> dtos = new ArrayList<>();
-        for (ProductEntity p : products) {
-            dtos.add(toDTO(p, true));
-        }
-        return dtos;
+        return products.stream()
+                .map(p -> toDTO(p, true))
+                .collect(Collectors.toList());
     }
 
-    // 추가: 상품 이미지 URL 목록 반환 (견고한 처리)
+    // ===== 추가: 상품 이미지 URL 목록 반환 =====
     @Transactional(readOnly = true)
     public List<String> getProductImageUrls(Long proId, Integer limit) {
-        // 이미지 엔티티 필터/정렬 (리포지토리에 전용 메소드가 있으면 대체 권장)
         List<ProductImageEntity> imgs = imageRepo.findAll().stream()
             .filter(img -> img.getProduct() != null && Objects.equals(img.getProduct().getPronum(), proId))
             .sorted(Comparator.comparingInt(e -> e.getProimageorder() == null ? Integer.MAX_VALUE : e.getProimageorder()))
@@ -227,7 +237,6 @@ public class ProductService {
 
         if (imgs.isEmpty()) return Collections.emptyList();
 
-        // 파일명(또는 절대 URL / data URI) 목록으로 변환, null/blank 제거
         List<String> names = imgs.stream()
             .map(e -> {
                 String prourl = e.getProurl();
@@ -241,15 +250,13 @@ public class ProductService {
 
         if (names.isEmpty()) return Collections.emptyList();
 
-        // 필터: 매우 작은 data URI(예: 1x1 투명 GIF) 또는 너무 짧은 data URI 제거
         final String TINY_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-        final int MIN_DATA_URI_LENGTH = 200; // 필요에 따라 조정
+        final int MIN_DATA_URI_LENGTH = 200;
 
         List<String> filtered = names.stream()
             .filter(n -> {
                 if (n == null) return false;
                 if (n.startsWith("data:")) {
-                    // 짧은 data URI 또는 기본 투명 GIF 제거
                     if (n.equals(TINY_GIF)) return false;
                     return n.length() >= MIN_DATA_URI_LENGTH;
                 }
@@ -259,20 +266,15 @@ public class ProductService {
 
         if (filtered.isEmpty()) return Collections.emptyList();
 
-        // limit 적용
         if (limit != null && limit > 0 && limit < filtered.size()) {
             filtered = filtered.subList(0, limit);
         }
 
-        // 절대 URL로 변환 후 반환
         return filtered.stream()
                 .map(name -> {
-                    if (name == null) return null;
-                    if (name.startsWith("data:")) return name;               // data URI는 그대로
-                    if (name.startsWith("http")) return name;               // 이미 절대 URL이면 그대로
-                    return baseImageUrl + "/" + name;                       // 파일명은 baseImageUrl과 합침
+                    if (name.startsWith("data:") || name.startsWith("http")) return name;
+                    return baseImageUrl + "/" + name;
                 })
-                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 }

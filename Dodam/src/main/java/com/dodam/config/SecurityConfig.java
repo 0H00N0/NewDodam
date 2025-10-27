@@ -61,13 +61,15 @@ public class SecurityConfig {
                     "/api/products/popular",
                     "/api/reviews/count",
                     "/api/products/**",
+                    "/api/image/proxy",
                     "/admin/**",
                     "/cart/**",
                     "/rent/**",
                     "/test/**",
                     "/product-inquiries/**",
                     "/member/findPwByMemail",
-                    "/member/findPwByMtel"
+                    "/member/findPwByMtel",
+                    "/reviews/**"
                 )
             )
             .authorizeHttpRequests(auth -> auth
@@ -87,6 +89,7 @@ public class SecurityConfig {
                 .requestMatchers("/events/**").permitAll()
                 .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
                 .requestMatchers("/rent/**").authenticated()
+                .requestMatchers("/api/image/proxy").permitAll()
                 .requestMatchers("/reviews/**").permitAll()
                 // ✅ 추가(권장): 상품 문의는 로그인 필요
                 .requestMatchers("/product-inquiries/**").authenticated()
@@ -128,11 +131,8 @@ public class SecurityConfig {
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowCredentials(true);
-        c.setAllowedOrigins(List.of(
-            front,
-            "http://127.0.0.1:3000"
-        ));
-        c.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        c.setAllowedOrigins(List.of("http://localhost:3000"));
+        c.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         c.setAllowedHeaders(List.of("*"));
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);
