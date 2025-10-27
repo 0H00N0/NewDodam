@@ -5,7 +5,9 @@ import com.dodam.cart.dto.CartDTO;
 import com.dodam.cart.dto.CartItemViewDTO;
 import com.dodam.cart.repository.CartRepository;
 import com.dodam.product.entity.ProductEntity;
+import com.dodam.product.entity.ProductImageEntity;               // ✅ 유지
 import com.dodam.product.repository.ProductRepository;
+import com.dodam.product.repository.ProductImageRepository;      // ✅ 유지
 import com.dodam.rent.service.RentService;
 
 import lombok.RequiredArgsConstructor;
@@ -23,23 +25,21 @@ public class CartService {
 
     private final CartRepository cartRepo;
     private final ProductRepository productRepo;  // ✅ 상품명/가격 조회용
+    private final ProductImageRepository productImageRepo;        // ✅ 썸네일 조회용
     private final RentService rentService;
 
     public CartDTO get(Long cartnum) {
         CartEntity entity = cartRepo.findById(cartnum)
-        	.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Cart not found"));
         return toDTO(entity);
     }
 
-    /**
-     * ✅ 내 장바구니 목록 조회 (표시용 DTO)
-     */
+    /** ✅ 내 장바구니 목록 조회 (표시용 DTO) */
     @Transactional(readOnly = true)
     public List<CartItemViewDTO> findMy(Long mnum) {
         List<CartEntity> items = cartRepo.findByMnum(mnum);
         if (items.isEmpty()) return List.of();
 
-        // 상품 정보 한번에 조인/매핑
         Set<Long> proIds = items.stream().map(CartEntity::getPronum).collect(Collectors.toSet());
         Map<Long, ProductEntity> prodMap = productRepo.findAllById(proIds).stream()
                 .collect(Collectors.toMap(ProductEntity::getPronum, p -> p));
@@ -51,20 +51,32 @@ public class CartService {
                     .cartnum(e.getCartnum())
                     .pronum(e.getPronum())
                     .proname(p != null ? p.getProname() : null)
-                    .price(p != null ? p.getProprice() : null)    // 표시용 현재가
-                    .thumbnail(null)                               // 필요시 이미지 조인해서 채워도 됨
-                    .qty(e.getQty())                              // ✅ 여기! 1 고정 → e.getQty() 로 변경
+                    .price(p != null ? p.getProprice() : null)
+                    .thumbnail(resolveThumbnail(p))   // ✅ 썸네일 채움
+                    .qty(e.getQty())
                     .build());
         }
         return result;
     }
 
-    /**
-     * ✅ UPSERT: (mnum, pronum) 중복 방지
-     */
+    // ✅ 최소침습: 썸네일 1장만
+    private String resolveThumbnail(ProductEntity product) {
+        if (product == null) return null;
+
+        Optional<ProductImageEntity> imgOpt =
+                productImageRepo.findFirstByProductOrderByProimageorderAsc(product);
+        if (imgOpt.isEmpty()) return null;
+
+        String raw = imgOpt.get().getProurl();
+        if (raw == null || raw.isBlank()) return null;
+
+        // ❗ 이중 인코딩 방지: 인코딩 없이 그대로 프록시에 전달
+        return "/api/image/proxy?url=" + raw;
+    }
+
+    /** ✅ UPSERT: (mnum, pronum) 중복 방지 */
     @Transactional
     public CartDTO upsert(CartDTO dto) {
-        // ✅ qty 기본값 보정
         int addQty = (dto.getQty() == null || dto.getQty() < 1) ? 1 : dto.getQty();
 
         CartEntity exist = cartRepo.findByMnumAndPronum(dto.getMnum(), dto.getPronum()).orElse(null);
@@ -76,15 +88,13 @@ public class CartService {
                 .mnum(dto.getMnum())
                 .pronum(dto.getPronum())
                 .catenum(dto.getCatenum())
-                .qty(addQty) // ✅ 항상 1 이상
+                .qty(addQty)
                 .build();
         cartRepo.save(entity);
         return toDTO(entity);
     }
 
-    /**
-     * (필요 시 유지) 단순 save — 이제는 upsert로 위임
-     */
+    /** (필요 시 유지) 단순 save — 이제는 upsert로 위임 */
     @Transactional
     public CartDTO save(CartDTO dto) {
         return upsert(dto);
@@ -99,7 +109,7 @@ public class CartService {
             .qty(entity.getQty())
             .build();
     }
-    
+
     /** 수량 변경 */
     @Transactional 
     public void changeQty(Long mnum, Long pronum, int qty) {
@@ -128,8 +138,6 @@ public class CartService {
             int times = Math.max(1, item.getQty());
             for (int i = 0; i < times; i++) {
                 var rent = rentService.rentProduct(mnum, item.getPronum());
-                // RentEntity PK 이름은 실제 코드에 맞게
-                // 예: rent.getRenid()
                 rentIds.add(rent.getRenNum());
             }
         }
