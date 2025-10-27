@@ -23,13 +23,11 @@ public class SessionAuthFilter extends OncePerRequestFilter {
         "/webhooks/pg",      // ★ PortOne 웹훅
         "/pg/",              // (혹시 쓰는 PG 라우팅)
         "/payments/",        // 결제 확인/조회
-        "/reviews/",		//리뷰 공개조회
+        "/reviews/",      //리뷰 공개조회
         "/subscriptions/",   // 구독 시작/조회
         "/billing-keys/",    // 빌링키 등록/확정
         "/h2-console/",      // 콘솔
-        "/static/", "/assets/", "/favicon", "/css/", "/js/", "/img/", "/images/",
-        "/webhooks/pg", "/pg/", "/payments/", "/subscriptions/", "/billing-keys/",
-        "/h2-console/", "/static/", "/assets/", "/favicon", "/css/", "/js/", "/img/", "/images/"
+        "/static/", "/assets/", "/favicon", "/css/", "/js/", "/img/", "/images/"
     );
 
     private static boolean shouldBypass(HttpServletRequest req) {
