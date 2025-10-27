@@ -27,7 +27,10 @@ public class SessionAuthFilter extends OncePerRequestFilter {
         "/subscriptions/",   // 구독 시작/조회
         "/billing-keys/",    // 빌링키 등록/확정
         "/h2-console/",      // 콘솔
-        "/static/", "/assets/", "/favicon", "/css/", "/js/", "/img/", "/images/"
+        "/static/", 
+        "/assets/", 
+        "/favicon", 
+        "/css/", "/js/", "/img/", "/images/"
     );
 
     private static boolean shouldBypass(HttpServletRequest req) {
