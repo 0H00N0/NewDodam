@@ -34,10 +34,6 @@ public class PlanSubscriptionScheduler {
     private final PlanSubscriptionService subscriptionService;
     private final PlanPortoneClientService portone;
 
-    /**
-     * 매일 새벽 03:00 — “내일까지 결제 예정” 대상에 대해
-     * PENDING 인보이스를 보장하고, PG 스케줄(자동결제)을 걸어둡니다.
-     */
     @Scheduled(cron = "0 0 3 * * *", zone = "Asia/Seoul")
     @Transactional
     public void scheduleUpcomingRenewals() {
@@ -49,23 +45,19 @@ public class PlanSubscriptionScheduler {
                         until, PmStatus.ACTIVE);
 
         for (PlanMember pm : targets) {
-            // 결제수단/빌링키 확인
             if (pm.getPayment() == null || !StringUtils.hasText(pm.getPayment().getPayKey())) {
                 log.warn("[Renewal] skip pmId={} (no billingKey)", pm.getPmId());
                 continue;
             }
 
-            // 금액/통화 산출
             AmountCurr ac = resolveAmountCurrency(pm);
             if (ac == null) {
                 log.warn("[Renewal] skip pmId={} (no price)", pm.getPmId());
                 continue;
             }
 
-            // PENDING 인보이스 보장
             PlanInvoiceEntity inv = ensurePendingInvoiceFor(pm, ac.amount(), ac.currency());
 
-            // PG 스케줄 등록(다음 결제일 시각에 자동결제)
             Instant schedAt = pm.getPmNextBil().atZone(ZoneId.systemDefault()).toInstant();
             String orderId = "renew-" + inv.getPiId();
             try {
@@ -85,9 +77,6 @@ public class PlanSubscriptionScheduler {
         }
     }
 
-    /**
-     * 매일 새벽 04:00 — 해지 예약(CANCEL_SCHEDULED)이고 종료일이 지난 구독을 완전 해지.
-     */
     @Scheduled(cron = "0 0 4 * * *", zone = "Asia/Seoul")
     @Transactional
     public void finalizeCanceled() {
@@ -106,7 +95,7 @@ public class PlanSubscriptionScheduler {
         }
     }
 
-    /** 현재 pm의 가격/통화 계산 (pm.price 우선, 없으면 plan/terms 기준 조회) */
+    /** 가격/통화 계산 */
     private AmountCurr resolveAmountCurrency(PlanMember pm) {
         if (pm.getPrice() != null) {
             String curr = Optional.ofNullable(pm.getPrice().getPpriceCurr()).orElse("KRW");
@@ -130,21 +119,33 @@ public class PlanSubscriptionScheduler {
     private PlanInvoiceEntity ensurePendingInvoiceFor(PlanMember pm, BigDecimal amount, String currency) {
         String mid = pm.getMember().getMid();
         LocalDateTime now = LocalDateTime.now();
+
         return invoiceRepo.findRecentPendingSameAmount(
                         mid, PiStatus.PENDING, amount, currency, now.minusDays(3), now.plusDays(3))
                 .orElseGet(() -> {
-                    // 다음 주기에 맞춰 기간 설정
-                    LocalDateTime start = pm.getPmTermEnd();
-                    LocalDateTime end = start.plusMonths(pm.getPmCycle() != null ? pm.getPmCycle() : 1);
+                    int cycle = Optional.ofNullable(pm.getPmCycle()).orElse(1);
+
+                    // ✅ 기간 시작 계산 (절대 NULL 안 나옴)
+                    LocalDateTime start = Optional.ofNullable(pm.getPmTermEnd())
+                            .map(d -> d.plusSeconds(1)) // 직전 구간 종료 바로 다음 초
+                            .orElseGet(() -> {
+                                LocalDateTime next = Optional.ofNullable(pm.getPmNextBil())
+                                        .orElse(LocalDateTime.now());
+                                return next.minusMonths(cycle);
+                            });
+
+                    // ✅ 종료 = 시작 + cycle개월 - 1초
+                    LocalDateTime end = start.plusMonths(cycle).minusSeconds(1);
 
                     PlanInvoiceEntity inv = PlanInvoiceEntity.builder()
                             .planMember(pm)
                             .piStart(start)
-                            .piEnd(end)
+                            .piEnd(end)               // ✅ 핵심
                             .piAmount(amount)
                             .piCurr(currency)
                             .piStat(PiStatus.PENDING)
                             .build();
+
                     return invoiceRepo.save(inv);
                 });
     }
