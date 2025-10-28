@@ -60,6 +60,7 @@ public class MemberController {
         return ResponseEntity.ok(Map.of(
                 "message", "login ok",
                 "mid", member.getMid(),
+                "mnum", member.getMnum(),
                 "mname", member.getMname(),
                 "role", role
         ));
