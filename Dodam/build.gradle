@@ -1,54 +1,57 @@
 plugins {
-   id 'java'
-   id 'org.springframework.boot' version '3.5.4'
-   id 'io.spring.dependency-management' version '1.1.7'
+    id 'java'
+    id 'org.springframework.boot' version '3.5.4'
+    id 'io.spring.dependency-management' version '1.1.7'
 }
- 
+
 group = 'com.dodam'
 version = '0.0.1-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
 java {
-   toolchain {
-      languageVersion = JavaLanguageVersion.of(21)
-   }
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 configurations {
-   compileOnly {
-      extendsFrom annotationProcessor
-   }
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
 }
 
 repositories {
-   mavenCentral()
+    mavenCentral()
 }
 
 dependencies {
-   implementation 'com.oracle.database.jdbc:ojdbc17'
-   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-   implementation 'org.springframework.boot:spring-boot-starter-validation'
-   implementation 'org.springframework.boot:spring-boot-starter-web'
-   implementation 'org.springframework.boot:spring-boot-starter-security'
-   implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
-   implementation 'org.springframework.security:spring-security-crypto'
-   implementation 'org.springframework.boot:spring-boot-starter-webflux'
-   annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
-   implementation 'io.portone:server-sdk:0.21.0'
-   
-   compileOnly 'org.projectlombok:lombok'
-   developmentOnly 'org.springframework.boot:spring-boot-devtools'
-   runtimeOnly 'com.oracle.database.jdbc:ojdbc17'
-   annotationProcessor 'org.projectlombok:lombok'
-   testImplementation 'org.springframework.boot:spring-boot-starter-test'
-   testImplementation 'org.springframework.security:spring-security-test'
-   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-   implementation 'com.fasterxml.jackson.core:jackson-databind'
-   implementation 'com.opencsv:opencsv:5.9'
+    // Oracle JDBC for 12c (Java 17+ compatible)
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc17:23.3.0.23.09'
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation 'org.springframework.security:spring-security-crypto'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'io.portone:server-sdk:0.21.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.opencsv:opencsv:5.9'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
-   useJUnitPlatform()
+    useJUnitPlatform()
 }
 
 tasks.withType(JavaCompile) {
