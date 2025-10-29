@@ -12,9 +12,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;   // ✅ 쿠키 기반
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler; // ✅ 호환성 보강
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.*;
+
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 
@@ -34,12 +35,13 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // CORS
+            /** ✅ CORS 설정 */
             .cors(cors -> cors.configurationSource(corsSource()))
-            // CSRF (쿠키 기반, 프런트 axios와 일치)
+
+            /** ✅ CSRF 설정 (React와 쿠키 기반 통신 호환) */
             .csrf(csrf -> csrf
-                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()) // ✅ XSRF-TOKEN 쿠키 자동 발급
-                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())    // ✅ Spring Security 6 호환
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 .ignoringRequestMatchers(
                     "/oauth/**",
                     "/member/loginForm",
@@ -72,9 +74,11 @@ public class SecurityConfig {
                     "/reviews/**"
                 )
             )
+
+            /** ✅ 권한 설정 */
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/h2-console/**").permitAll()
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // Preflight 요청 허용
                 .requestMatchers("/member/**").permitAll()
                 .requestMatchers("/webhooks/pg").permitAll()
                 .requestMatchers("/payments/**").permitAll()
@@ -87,58 +91,67 @@ public class SecurityConfig {
                 .requestMatchers("/products/**").permitAll()
                 .requestMatchers("/index.html").permitAll()
                 .requestMatchers("/events/**").permitAll()
-                .requestMatchers("/test/**").permitAll()   // ← 테스트용 개방
-                .requestMatchers("/rent/**").authenticated()
+                .requestMatchers("/test/**").permitAll()
                 .requestMatchers("/api/image/proxy").permitAll()
                 .requestMatchers("/reviews/**").permitAll()
-                // ✅ 추가(권장): 상품 문의는 로그인 필요
-                .requestMatchers("/product-inquiries/**").authenticated()
-                // ✅ 게시판은 로그인 필요 (USER/ADMIN 모두)
-                .requestMatchers("/board/**").authenticated()
-                .requestMatchers("/test/**").permitAll()
 
-                // ✅ 커뮤니티 열람 전부 허용 (순서 중요)
+                // ✅ 상품 문의, 게시판 등은 인증 필요
+                .requestMatchers("/product-inquiries/**").authenticated()
+                .requestMatchers("/board/**").authenticated()
+
+                // ✅ 커뮤니티 읽기 허용
                 .requestMatchers(HttpMethod.GET,
                     "/board/community",
                     "/board/community/**",
                     "/board/community/*/comments"
                 ).permitAll()
 
-                // ✅ 상태 변경은 인증 필요
+                // ✅ 게시글 작성/수정/삭제는 로그인 필요
                 .requestMatchers(HttpMethod.POST, "/board/**").authenticated()
                 .requestMatchers(HttpMethod.PUT, "/board/**").authenticated()
                 .requestMatchers(HttpMethod.DELETE, "/board/**").authenticated()
 
-                // ✅ CSRF 토큰 발급(읽기 전용)도 허용 (선택)
+                // ✅ CSRF 토큰 요청 허용
                 .requestMatchers(HttpMethod.GET, "/csrf").permitAll()
 
                 // ✅ 관리자 전용
                 .requestMatchers("/admin/**").hasRole("ADMIN")
 
-                // 상품/리뷰 등 공개 API
+                // ✅ 공개 상품/리뷰 API
                 .requestMatchers(HttpMethod.GET, "/api/products/new", "/api/products/popular").permitAll()
                 .requestMatchers("/api/products/**", "/api/reviews/count").permitAll()
 
                 .anyRequest().permitAll()
             )
+
+            /** ✅ 세션 관리 */
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+
+            /** ✅ 커스텀 세션 인증 필터 추가 */
             .addFilterBefore(sessionAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
+    /** ✅ CORS 전역 설정 */
     @Bean
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowCredentials(true);
-        c.setAllowedOrigins(List.of("http://localhost:3000"));
-        c.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        c.setAllowedHeaders(List.of("*"));
+        c.setAllowedOrigins(List.of(front, "http://localhost:3000"));
+        c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        c.setAllowedHeaders(List.of(
+            "Origin", "Content-Type", "Accept",
+            "Authorization", "X-XSRF-TOKEN"
+        ));
+        c.setExposedHeaders(List.of("Authorization", "Set-Cookie"));
+        c.setMaxAge(3600L); // 캐싱 1시간
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", c);
         return src;
     }
 
+    /** ✅ 비밀번호 암호화 */
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
