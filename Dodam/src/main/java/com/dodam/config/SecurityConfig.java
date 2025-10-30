@@ -138,7 +138,7 @@ public class SecurityConfig {
     CorsConfigurationSource corsSource() {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowCredentials(true);
-        c.setAllowedOrigins(List.of(front, "http://localhost:3000"));
+        c.setAllowedOrigins(List.of(front, "http://localhost:3000" , "http://192.168.219.176:3000"));
         c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         c.setAllowedHeaders(List.of(
             "Origin", "Content-Type", "Accept",
